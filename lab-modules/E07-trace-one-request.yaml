@@ -1,0 +1,54 @@
+id: trace-one-request
+version: 1.0.0
+module_id: observability
+level: intermediate
+estimated_minutes: 25
+title:
+  en: Trace One Request
+  ar: تتبع طلب واحد
+description:
+  en: Follow a request through fetch → transform → persist spans. Confirm the trace is correlated with the run record via trace_id.
+  ar: تتبّع طلباً عبر فترات fetch ثم transform ثم persist. أكّد أن التتبّع مرتبط بسجل التشغيل عبر trace_id.
+technology: [OpenTelemetry, Tempo]
+prerequisites: [graph-first-network]
+dataset_key: trace-demo-v1
+required_services: [postgres]
+capabilities: [telemetry]
+public_demo_enabled: true
+steps:
+  - id: start
+    title: {en: Start demo, ar: ابدأ العرض}
+    instruction: {en: Run the synthetic fetch → transform → persist operation and capture the run's trace_id., ar: شغّل العملية الاصطناعية (fetch → transform → persist) والتقط trace_id للتشغيل.}
+    operation_key: run_trace_demo
+    input_schema_ref: trace_demo_v1
+    validator_key: trace_demo_v1
+    expected:
+      min_spans: 3
+  - id: capture_trace_id
+    title: {en: Capture trace id, ar: التقط معرّف التتبّع}
+    instruction: {en: Read the run record and confirm trace_id is populated (not null)., ar: اقرأ سجل التشغيل وتأكد من تعبئة trace_id (ليس null).}
+    operation_key: run_trace_demo
+    input_schema_ref: trace_demo_v1
+    validator_key: trace_demo_v1
+    expected:
+      min_spans: 3
+  - id: inspect_spans
+    title: {en: Inspect trace spans, ar: افحص فترات التتبّع}
+    instruction: {en: Open the observability links endpoint and confirm the trace contains at least three spans with duration and status., ar: افتح نقطة روابط المراقبة وتأكد أن التتبّع يحتوي على ثلاث فترات على الأقل مع المدة والحالة.}
+    operation_key: run_trace_demo
+    input_schema_ref: trace_demo_v1
+    validator_key: trace_demo_v1
+    expected:
+      min_spans: 3
+  - id: report
+    title: {en: Report, ar: التقرير}
+    instruction: {en: Identify the slowest span (when sleep_ms is set) and report the result., ar: حدّد أبطأ فترة (عند ضبط sleep_ms) واكتب التقرير.}
+    operation_key: run_trace_demo
+    input_schema_ref: trace_demo_v1
+    validator_key: trace_demo_v1
+    expected:
+      min_spans: 3
+failure_mode: |
+  If the run record has no trace_id (instrumentation not wired), the
+  validator fails honestly with `trace_id is None`. The operation never
+  claims success without a populated trace_id.

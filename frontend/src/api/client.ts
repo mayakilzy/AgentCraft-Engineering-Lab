@@ -182,3 +182,193 @@ export async function getHealthReady(): Promise<ReadyResponse> {
 export async function getModules(): Promise<ModulesResponse> {
   return apiGet<ModulesResponse>('/api/v1/modules');
 }
+
+// ---- Experiments (G05) ----
+
+export interface ExperimentListResponse {
+  count: number;
+  ids: string[];
+}
+
+export interface LocalizedText {
+  en: string;
+  ar: string;
+}
+
+export interface ManifestStep {
+  id: string;
+  title: LocalizedText;
+  instruction: LocalizedText;
+  operation_key: string;
+  input_schema_ref: string;
+  validator_key: string;
+  expected: Record<string, unknown>;
+}
+
+export interface ExperimentManifest {
+  id: string;
+  version: string;
+  module_id: string;
+  level: 'beginner' | 'intermediate' | 'advanced';
+  estimated_minutes: number;
+  title: LocalizedText;
+  description: LocalizedText;
+  technology: string[];
+  prerequisites: string[];
+  dataset_key: string;
+  required_services: string[];
+  capabilities: string[];
+  public_demo_enabled: boolean;
+  steps: ManifestStep[];
+  failure_mode?: string;
+}
+
+export async function listExperiments(): Promise<ExperimentListResponse> {
+  return apiGet<ExperimentListResponse>('/api/v1/experiments');
+}
+
+export async function getExperiment(id: string): Promise<ExperimentManifest> {
+  return apiGet<ExperimentManifest>(`/api/v1/experiments/${encodeURIComponent(id)}`);
+}
+
+// ---- Runs (G05) ----
+
+export interface RunCreateRequest {
+  mode: 'guided' | 'challenge';
+  inputs: Record<string, unknown>;
+}
+
+export interface StepVerdict {
+  step_id: string;
+  operation_key: string;
+  operation_status: string;
+  operation_error_code: string | null;
+  validator_key: string;
+  validator_passed: boolean;
+  validator_message: string;
+  expected: Record<string, unknown>;
+  actual: Record<string, unknown>;
+}
+
+export interface RunCreateResponse {
+  run_id: string;
+  status: string;
+  trace_id: string | null;
+  error_code: string | null;
+  step_verdicts: StepVerdict[];
+}
+
+export interface RunRecord {
+  run_id: string;
+  experiment_id: string;
+  mode: string;
+  status: string;
+  trace_id: string | null;
+  error_code: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  inputs_redacted: Record<string, unknown> | null;
+  verification: { step_verdicts?: StepVerdict[] } | null;
+  outputs: Record<string, unknown> | null;
+}
+
+export interface RunListResponse {
+  count: number;
+  runs: RunRecord[];
+}
+
+export interface ResetResponse {
+  run_id: string;
+  experiment_id: string;
+  dataset_id: string | null;
+  deleted_nodes: number;
+  deleted_edges: number;
+  reset_event_id: string;
+}
+
+export interface CompareResponse {
+  run_a_id: string;
+  run_b_id: string;
+  same_experiment: boolean;
+  same_final_status: boolean;
+  same_step_count: boolean;
+  step_diffs: Array<Record<string, unknown>>;
+  note: string;
+}
+
+export interface ExportResponse {
+  format: 'md' | 'json';
+  report: unknown;
+}
+
+export async function createRun(
+  experimentId: string,
+  body: RunCreateRequest,
+): Promise<RunCreateResponse> {
+  const res = await fetch(
+    `/api/v1/experiments/${encodeURIComponent(experimentId)}/runs`,
+    {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Request-Id': newRequestId(),
+      },
+      body: JSON.stringify(body),
+    },
+  );
+  return parseResponse<RunCreateResponse>(res);
+}
+
+export async function getRun(runId: string): Promise<RunRecord> {
+  return apiGet<RunRecord>(`/api/v1/runs/${encodeURIComponent(runId)}`);
+}
+
+export async function listRuns(
+  experimentId?: string,
+  limit: number = 50,
+): Promise<RunListResponse> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (experimentId) params.set('experiment_id', experimentId);
+  return apiGet<RunListResponse>(`/api/v1/runs?${params.toString()}`);
+}
+
+export async function resetRun(runId: string): Promise<ResetResponse> {
+  const res = await fetch(
+    `/api/v1/runs/${encodeURIComponent(runId)}/reset`,
+    {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Request-Id': newRequestId(),
+      },
+    },
+  );
+  return parseResponse<ResetResponse>(res);
+}
+
+export async function exportRun(
+  runId: string,
+  format: 'md' | 'json' = 'md',
+): Promise<ExportResponse> {
+  return apiGet<ExportResponse>(
+    `/api/v1/runs/${encodeURIComponent(runId)}/export?format=${format}`,
+  );
+}
+
+export async function compareRuns(
+  runAId: string,
+  runBId: string,
+): Promise<CompareResponse> {
+  const res = await fetch('/api/v1/runs/compare', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Request-Id': newRequestId(),
+    },
+    body: JSON.stringify({ run_a_id: runAId, run_b_id: runBId }),
+  });
+  return parseResponse<CompareResponse>(res);
+}

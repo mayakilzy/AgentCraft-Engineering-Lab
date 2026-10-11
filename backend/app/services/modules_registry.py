@@ -57,6 +57,12 @@ class ModuleRegistry:
             extra={"manifest_id": manifest.id, "module_id": manifest.module_id},
         )
 
+    def clear(self) -> None:
+        """Drop all registered manifests. Used by the lifespan loader so
+        re-entrant boot cycles (test isolation) don't trip the duplicate-id
+        guard. Production calls this exactly once per boot."""
+        self._items.clear()
+
     def all(self) -> Iterator[ManifestRef]:
         return iter(self._items.values())
 

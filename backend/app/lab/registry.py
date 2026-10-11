@@ -92,3 +92,6 @@ def registered_validators() -> list[str]:
 from app.lab import operations as _ops  # noqa: E402,F401
 from app.lab import validators as _vals  # noqa: E402,F401
 from app.lab import observability_operations as _obs_ops  # noqa: E402,F401
+# G05: E04–E10 operation handlers and validators (extended set).
+from app.lab import extended_operations as _ext_ops  # noqa: E402,F401
+from app.lab import extended_validators as _ext_vals  # noqa: E402,F401

@@ -1,0 +1,59 @@
+id: critical-dependencies
+version: 1.0.0
+module_id: graph
+level: intermediate
+estimated_minutes: 25
+title:
+  en: Critical Dependencies
+  ar: الاعتماديات الحرجة
+description:
+  en: Detect the high-impact provider via directed reachability and compare it with naive degree centrality. The two signals are different.
+  ar: اكتشف المُوفّر عالي التأثير عبر الوصول الموجّه وقارنه بمؤشر الدرجة البسيط. الإشارتان مختلفتان.
+technology: [NetworkX]
+prerequisites: [shortest-path]
+dataset_key: dependency-impact-v1
+required_services: [postgres]
+capabilities: [graph-visualization]
+public_demo_enabled: true
+steps:
+  - id: seed
+    title: {en: Load dependency fixture, ar: حمّل بيانات الاعتماديات}
+    instruction: {en: "Load the dependency-impact fixture (apps A,B and tools T1,T2,T3 with directed edges).", ar: "حمّل بيانات الأثر (تطبيقات A,B وأدوات T1,T2,T3 مع حواف موجّهة)."}
+    operation_key: seed_graph
+    input_schema_ref: seed_graph_v1
+    validator_key: seed_five_nodes_v1
+    expected:
+      node_count: 5
+      edge_count: 5
+  - id: degree
+    title: {en: Score degree, ar: احسب الدرجة}
+    instruction: {en: Inspect in/out degrees and degree centrality for T1., ar: افحص درجات الدخول/الخروج ومؤشر الدرجة للأداة T1.}
+    operation_key: critical_dep_analysis
+    input_schema_ref: critical_dep_v1
+    validator_key: critical_dep_v1
+    expected:
+      target: T1
+      impact_set: [T3]
+  - id: reachability
+    title: {en: Score reachable dependents, ar: احسب التبعيات القابلة للوصول}
+    instruction: {en: Remove T1 in simulation and confirm T3 becomes unreachable from B (but not from A)., ar: احذف T1 في المحاكاة وتأكد أن T3 يصبح غير قابل للوصول من B (وليس من A).}
+    operation_key: critical_dep_analysis
+    input_schema_ref: critical_dep_v1
+    validator_key: critical_dep_v1
+    expected:
+      target: T1
+      impact_set: [T3]
+  - id: compare
+    title: {en: Compare with centrality, ar: قارن بمؤشر الدرجة}
+    instruction: {en: Compare the reachability impact with the naive degree centrality and acknowledge they are different signals., ar: قارن أثر الوصول بمؤشر الدرجة البسيط وتأكد أنهما إشارتان مختلفتان.}
+    operation_key: critical_dep_analysis
+    input_schema_ref: critical_dep_v1
+    validator_key: critical_dep_v1
+    expected:
+      target: T1
+      impact_set: [T3]
+failure_mode: |
+  Asking for analysis of a non-existent node produces
+  `error_code=node_not_found`. The validator explicitly distinguishes
+  reachability impact (operational criticality) from degree centrality
+  (naive connectivity) so the user cannot conflate them.

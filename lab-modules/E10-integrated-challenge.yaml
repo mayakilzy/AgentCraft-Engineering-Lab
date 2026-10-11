@@ -1,0 +1,67 @@
+id: integrated-challenge
+version: 1.0.0
+module_id: challenge
+level: advanced
+estimated_minutes: 40
+title:
+  en: Graph and Observability Challenge
+  ar: تحدي الرسم والمراقبة
+description:
+  en: Identify the faulty dependency and its operational symptom using the graph plus the trace. Then fix the issue and verify with a rerun.
+  ar: حدّد الاعتمادية المعيبة وأعراضها التشغيلية باستخدام الرسم والتتبّع. ثم أصلح المشكلة وتحقق بإعادة التشغيل.
+technology: [NetworkX, OpenTelemetry, Grafana]
+prerequisites: [critical-dependencies, trace-one-request, build-monitoring-dashboard]
+dataset_key: integrated-challenge-v1
+required_services: [postgres]
+capabilities: [graph-visualization, telemetry]
+public_demo_enabled: true
+steps:
+  - id: load
+    title: {en: Load integrated dependency graph, ar: حمّل رسم الاعتماديات المتكامل}
+    instruction: {en: "Load the integrated dependency fixture (apps, tools and a deliberately failing path).", ar: حمّل بيانات الاعتماديات المتكاملة (تطبيقات وأدوات ومسار معتلّ متعمّد).}
+    operation_key: seed_graph
+    input_schema_ref: seed_graph_v1
+    validator_key: seed_five_nodes_v1
+    expected:
+      node_count: 8
+      edge_count: 8
+  - id: paths
+    title: {en: Inspect paths, ar: افحص المسارات}
+    instruction: {en: Compute shortest paths from each app and confirm the expected topology., ar: احسب أقصر المسارات من كل تطبيق وتأكد من الهيكل المتوقع.}
+    operation_key: shortest_path
+    input_schema_ref: shortest_path_v1
+    validator_key: integrated_challenge_v1
+    expected:
+      critical_edge: [APP1, T1]
+  - id: scenario
+    title: {en: Execute scenario, ar: نفّذ السيناريو}
+    instruction: {en: Inject a failure at the transform step and capture the trace_id., ar: أدخل عطلاً في خطوة transform والتقط trace_id.}
+    operation_key: inject_failure
+    input_schema_ref: inject_failure_v1
+    validator_key: integrated_challenge_v1
+    expected:
+      critical_edge: [APP1, T1]
+      failing_step: transform
+  - id: trace
+    title: {en: View trace, ar: اعرض التتبّع}
+    instruction: {en: Open the observability links endpoint and locate the failing span., ar: افتح نقطة روابط المراقبة وحدّد الفترة الفاشلة.}
+    operation_key: inject_failure
+    input_schema_ref: inject_failure_v1
+    validator_key: integrated_challenge_v1
+    expected:
+      critical_edge: [APP1, T1]
+      failing_step: transform
+  - id: fix
+    title: {en: Fix and compare, ar: أصلح وقارن}
+    instruction: {en: Disable the injection, ar: عطّل الحقن، أعد تشغيل trace_demo وتأكد من نجاح التشغيل المُصحّح.}
+    operation_key: run_trace_demo
+    input_schema_ref: trace_demo_v1
+    validator_key: integrated_challenge_v1
+    expected:
+      critical_edge: [APP1, T1]
+      corrected_status: ok
+failure_mode: |
+  Both graph and telemetry assertions must pass for the experiment to
+  pass. A missing trace_id on the failed run, or a wrong critical-edge
+  identification, fails the validator honestly. The report must be
+  exported (md/json) to demonstrate the diagnosis trail.

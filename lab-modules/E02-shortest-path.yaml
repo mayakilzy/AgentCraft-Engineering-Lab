@@ -1,0 +1,47 @@
+id: shortest-path
+version: 1.0.0
+module_id: graph
+level: beginner
+estimated_minutes: 20
+title:
+  en: Shortest Path
+  ar: أقصر مسار
+description:
+  en: Select an application and a target dependency; find the shortest directed path between them and verify unreachable handling.
+  ar: اختر تطبيقاً وتبعية هدف؛ اعثر على أقصر مسار موجّه بينهما وتحقق من معالجة حالة عدم الوصول.
+technology: [NetworkX]
+prerequisites: [graph-first-network]
+dataset_key: directed-path-v1
+required_services: [postgres]
+capabilities: [graph-visualization]
+public_demo_enabled: true
+steps:
+  - id: seed
+    title: {en: Load dataset, ar: تحميل البيانات}
+    instruction: {en: Load the directed-path fixture (six nodes with one isolated component)., ar: حمّل بيانات المسار الموجّه (ست عقد مع مكوّن معزول).}
+    operation_key: seed_graph
+    input_schema_ref: seed_graph_v1
+    validator_key: seed_five_nodes_v1
+    expected:
+      node_count: 6
+      edge_count: 4
+  - id: shortest_path
+    title: {en: Find path A to T3, ar: اعثر على المسار من A إلى T3}
+    instruction: {en: Run the directed shortest path from application A to tool T3., ar: شغّل أقصر مسار موجّه من التطبيق A إلى الأداة T3.}
+    operation_key: shortest_path
+    input_schema_ref: shortest_path_v1
+    validator_key: shortest_path_directed_v1
+    expected:
+      path: [A, T1, T2, T3]
+  - id: unreachable
+    title: {en: Test unreachable pair, ar: اختبر زوجاً غير قابل للوصول}
+    instruction: {en: Attempt the path from A to the isolated node ISO; verify the result is null., ar: حاول الوصول من A إلى العقدة المعزولة ISO وتحقق أن النتيجة فارغة.}
+    operation_key: shortest_path
+    input_schema_ref: shortest_path_v1
+    validator_key: shortest_path_directed_v1
+    expected:
+      path: null
+failure_mode: |
+  Asking for a path to a non-existent node produces `error_code=node_not_found`.
+  Supplying a wrong expected path makes the validator fail honestly even
+  when the operation succeeded.

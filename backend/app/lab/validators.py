@@ -219,19 +219,48 @@ def validate_trace_demo(
 ) -> ValidationResult:
     """E07 validator: the trace must contain ≥3 spans (fetch → transform →
     persist) with status and timing. The run_id must be present in outputs.
+
+    Per ADR-0003 step 4 (G05 wiring): the validator also asserts that
+    `run.trace_id` is populated (not None). When the wiring is incomplete
+    (the run record has no trace_id), the validator fails honestly so the
+    reviewer can detect a wiring gap. The expected block can override this
+    by setting `run_trace_id: false` for a deliberate "wiring not required"
+    test (used by the legacy G04 tests).
     """
     spans = outputs.get("spans") or []
     span_count = outputs.get("span_count", len(spans))
     expected_count = expected.get("min_spans", 3)
-    passed = span_count >= expected_count
+    # G05 wiring: assert run.trace_id is present. The expected block can
+    # opt-out via `run_trace_id: false` for backwards compatibility with
+    # the G04 tests (which run before the runs endpoint is wired).
+    require_trace_id = expected.get("run_trace_id", True)
+    run_trace_id = outputs.get("run_trace_id")
+
+    problems: list[str] = []
+    if span_count < expected_count:
+        problems.append(f"span_count {span_count} < {expected_count}")
+    if require_trace_id and not run_trace_id:
+        problems.append("run.trace_id is None (run_id↔trace_id wiring incomplete)")
+
+    passed = not problems
     return ValidationResult(
         validator_key="trace_demo_v1",
         passed=passed,
-        expected={"min_spans": expected_count},
-        actual={"span_count": span_count, "spans": spans},
-        message=f"trace has {span_count} spans (≥{expected_count})"
-        if passed
-        else f"trace has only {span_count} spans (need ≥{expected_count})",
+        expected={
+            "min_spans": expected_count,
+            "run_trace_id_present": require_trace_id,
+        },
+        actual={
+            "span_count": span_count,
+            "spans": spans,
+            "run_trace_id": run_trace_id,
+        },
+        message=(
+            f"trace has {span_count} spans and run.trace_id is populated"
+            if passed
+            else "; ".join(problems) if problems
+            else "validation failed"
+        ),
     )
 
 
@@ -288,9 +317,15 @@ def validate_failure_diagnosis(
     """E09 validator: the failed run must pinpoint the configured fail_step;
     the corrected (re-run without injection) must pass.
 
+    Per ADR-0003 step 5 (G05 wiring): the validator also asserts the failed
+    run has a non-null `trace_id` so the user can locate the failing span in
+    Grafana Tempo. The expected block can opt out via
+    `failed_run.trace_id_present: false` for backwards compatibility with
+    the G04 tests.
+
     Expected shape:
         expected = {
-            "failed_run": {"fail_step": "transform"},
+            "failed_run": {"fail_step": "transform", "trace_id_present": true},
             "corrected_run": {"status": "ok"},
         }
     """
@@ -299,6 +334,8 @@ def validate_failure_diagnosis(
     expected_fail = expected.get("failed_run", {}).get("fail_step")
     actual_fail = failed.get("fail_step")
     corrected_status = corrected.get("status")
+    require_failed_trace_id = expected.get("failed_run", {}).get("trace_id_present", True)
+    failed_trace_id = failed.get("trace_id")
 
     problems = []
     if actual_fail != expected_fail:
@@ -309,20 +346,34 @@ def validate_failure_diagnosis(
         problems.append("failed_run.status is not 'failed'")
     if corrected_status != "ok":
         problems.append(f"corrected_run.status={corrected_status} != 'ok'")
+    if require_failed_trace_id and not failed_trace_id:
+        problems.append(
+            "failed_run.trace_id is None — user cannot locate the failing span in Grafana"
+        )
 
     passed = not problems
     return ValidationResult(
         validator_key="failure_diagnosis_v1",
         passed=passed,
         expected={
-            "failed_run": {"fail_step": expected_fail, "status": "failed"},
+            "failed_run": {
+                "fail_step": expected_fail,
+                "status": "failed",
+                "trace_id_present": require_failed_trace_id,
+            },
             "corrected_run": {"status": "ok"},
         },
         actual={
-            "failed_run": {"fail_step": actual_fail, "status": failed.get("status")},
+            "failed_run": {
+                "fail_step": actual_fail,
+                "status": failed.get("status"),
+                "trace_id": failed_trace_id,
+            },
             "corrected_run": {"status": corrected_status},
         },
-        message="diagnosis matches injected fail_step + corrected rerun passes"
-        if passed
-        else "; ".join(problems),
+        message=(
+            "diagnosis matches injected fail_step + corrected rerun passes + trace_id present"
+            if passed
+            else "; ".join(problems)
+        ),
     )

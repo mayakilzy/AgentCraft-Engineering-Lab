@@ -1,0 +1,59 @@
+id: sql-vs-cypher
+version: 1.0.0
+module_id: parity
+level: intermediate
+estimated_minutes: 25
+title:
+  en: SQL versus Cypher
+  ar: SQL مقابل Cypher
+description:
+  en: Answer the same dependency query from two engines. Compare canonical result sets (order-independent) and inspect timing context.
+  ar: أجب عن استعلام التبعيات نفسه من محركين. قارن مجموعات النتائج (بغض النظر عن الترتيب) وافحص سياق التوقيت.
+technology: [PostgreSQL, Neo4j]
+prerequisites: [graph-first-network]
+dataset_key: parity-v1
+required_services: [postgres, neo4j]
+capabilities: [graph-visualization]
+public_demo_enabled: true
+steps:
+  - id: seed
+    title: {en: Seed both stores, ar: ابدأ تعبئة المخزنين}
+    instruction: {en: Load the parity fixture into PostgreSQL and (when configured) Neo4j., ar: حمّل بيانات التكافؤ إلى PostgreSQL و(إن وُجد) Neo4j.}
+    operation_key: seed_graph
+    input_schema_ref: seed_graph_v1
+    validator_key: seed_five_nodes_v1
+    expected:
+      node_count: 4
+      edge_count: 4
+  - id: sql_query
+    title: {en: Run allowlisted SQL, ar: شغّل استعلام SQL المسموح}
+    instruction: {en: Run the allowlisted SQL handler for direct app-uses-tool pairs., ar: شغّل معالج SQL المسموح لاستخراج علاقات استخدام التطبيقات للأدوات.}
+    operation_key: parity_run
+    input_schema_ref: parity_v1
+    validator_key: parity_v1
+    expected:
+      query_key: app_uses_tool_direct
+      equal: true
+  - id: cypher_query
+    title: {en: Run allowlisted Cypher, ar: شغّل استعلام Cypher المسموح}
+    instruction: {en: Run the allowlisted Cypher handler and compare canonical result sets., ar: شغّل معالج Cypher المسموح وقارن مجموعات النتائج المعيارية.}
+    operation_key: parity_run
+    input_schema_ref: parity_v1
+    validator_key: parity_v1
+    expected:
+      query_key: app_uses_tool_direct
+      equal: true
+  - id: compare
+    title: {en: Compare and inspect plan, ar: قارن وافحص الخطة}
+    instruction: {en: Inspect the timing context (cold/warm/sample/iterations) and confirm the canonical sets are equal., ar: افحص سياق التوقيت (بارد/دافئ/عينة/تكرارات) وأكّد تساوي المجموعات المعيارية.}
+    operation_key: parity_run
+    input_schema_ref: parity_v1
+    validator_key: parity_v1
+    expected:
+      query_key: app_uses_tool_direct
+      equal: true
+failure_mode: |
+  When Neo4j is not configured the operation returns BLOCKED with an
+  honest `error` string (`NEO4J_URI not configured`). The validator
+  then fails with `equal=false` and the missing backend is honestly
+  labelled — no fake PASS.

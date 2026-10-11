@@ -35,5 +35,64 @@
   },
   "footer": {
     "version": "الإصدار V1.0"
+  },
+  "experiments": {
+    "title": "التجارب",
+    "description": "عشر تجارب قياسية — وضعان موجَّه وتحدّي. لكل بطاقة: المستوى، المتطلبات السابقة، النتائج المتوقعة، والتقنيات المستخدمة.",
+    "level": {
+      "beginner": "مبتدئ",
+      "intermediate": "متوسط",
+      "advanced": "متقدّم"
+    },
+    "mode": {
+      "guided": "موجَّه",
+      "challenge": "تحدٍّ"
+    },
+    "minutes": "دقيقة",
+    "prerequisites": "المتطلبات السابقة",
+    "requiredServices": "الخدمات المطلوبة",
+    "technology": "التقنية",
+    "capabilities": "القدرات",
+    "expectedOutputs": "النتائج المتوقعة",
+    "steps": "الخطوات",
+    "step": "خطوة",
+    "instruction": "التعليمات",
+    "run": "تشغيل",
+    "rerun": "إعادة التشغيل",
+    "reset": "إعادة الضبط",
+    "compare": "مقارنة",
+    "export": "تصدير",
+    "exportMd": "تصدير (Markdown)",
+    "exportJson": "تصدير (JSON)",
+    "traceId": "معرّف التتبّع",
+    "runId": "معرّف التشغيل",
+    "startedAt": "بدأ في",
+    "endedAt": "انتهى في",
+    "status": "الحالة",
+    "errorCode": "رمز الخطأ",
+    "noRuns": "لا توجد تشغيلات لهذه التجربة في جلستك بعد.",
+    "runHistory": "سجل التشغيلات",
+    "selectToCompare": "اختر تشغيلين للمقارنة",
+    "compareResults": "نتائج المقارنة",
+    "sameExperiment": "نفس التجربة",
+    "sameStatus": "نفس الحالة النهائية",
+    "sameStepCount": "نفس عدد الخطوات",
+    "verdict": "الحكم",
+    "expected": "المتوقع",
+    "actual": "الفعلي",
+    "noExperiments": "لا توجد تجارب متاحة. تأكد من أن الباك-إند حمّل ملفات lab-modules.",
+    "failedToLoad": "فشل تحميل التجارب. تحقق من اتصال الباك-إند.",
+    "inputsLabel": "المدخلات",
+    "inputsHint": "أدخل المدخلات للعملية (مثل dataset_id و fixture_key و source و target). أزواج key:value مفصولة بفواصل.",
+    "runStarted": "بدأ التشغيل…",
+    "runCreated": "تم إنشاء التشغيل",
+    "showAllSteps": "عرض كل الخطوات",
+    "hideSteps": "إخفاء الخطوات"
+  },
+  "history": {
+    "title": "سجل التشغيلات",
+    "description": "كل التشغيلات في جلستك الحالية. انقر على أي تشغيل لفحصه أو تصديره أو مقارنته.",
+    "noRuns": "لا توجد لديك تشغيلات بعد. زر صفحة التجارب لبدء واحد.",
+    "filterByExperiment": "تصفية حسب التجربة"
   }
 }

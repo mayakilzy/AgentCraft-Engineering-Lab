@@ -1,0 +1,66 @@
+id: diagnose-hidden-failure
+version: 1.0.0
+module_id: observability
+level: advanced
+estimated_minutes: 30
+title:
+  en: Diagnose a Hidden Failure
+  ar: تشخيص عطل خفي
+description:
+  en: Inject a bounded failure at a named step, use the trace to find the failing stage, ask the mentor and rerun the corrected case.
+  ar: أدخل عطلاً محدوداً في خطوة مسماة، استخدم التتبّع لتحديد المرحلة الفاشلة، استشر الموجّه وأعد تشغيل الحالة المُصحّحة.
+technology: [OpenTelemetry, Grafana]
+prerequisites: [trace-one-request, build-monitoring-dashboard]
+dataset_key: failure-demo-v1
+required_services: [postgres]
+capabilities: [telemetry, failure-injection]
+public_demo_enabled: true
+steps:
+  - id: inject
+    title: {en: Inject failure, ar: أدخل العطل}
+    instruction: {en: Run the inject_failure operation with fail_step=transform. The run must fail and the trace_id must be populated., ar: شغّل عملية inject_failure مع fail_step=transform. يجب أن يفشل التشغيل ويكون trace_id معبّأً.}
+    operation_key: inject_failure
+    input_schema_ref: inject_failure_v1
+    validator_key: failure_diagnosis_v1
+    expected:
+      failed_run:
+        fail_step: transform
+      corrected_run:
+        status: ok
+  - id: inspect
+    title: {en: Inspect trace and logs, ar: افحص التتبّع والسجلات}
+    instruction: {en: Use the observability links endpoint to find the failing span and the run's error_code., ar: استخدم نقطة روابط المراقبة لتحديد الفترة الفاشلة و error_code للتشغيل.}
+    operation_key: inject_failure
+    input_schema_ref: inject_failure_v1
+    validator_key: failure_diagnosis_v1
+    expected:
+      failed_run:
+        fail_step: transform
+      corrected_run:
+        status: ok
+  - id: mentor
+    title: {en: Ask mentor, ar: استشر الموجّه}
+    instruction: {en: Use the mentor endpoint (when configured) with the run_id; the deterministic fallback explains the failed step when no provider is configured., ar: استخدم نقطة الموجّه (إن وُجدت) مع run_id؛ البديل الحتمي يشرح الخطوة الفاشلة عند غياب المزوّد.}
+    operation_key: inject_failure
+    input_schema_ref: inject_failure_v1
+    validator_key: failure_diagnosis_v1
+    expected:
+      failed_run:
+        fail_step: transform
+      corrected_run:
+        status: ok
+  - id: rerun
+    title: {en: Disable injection and rerun, ar: عطّل الحقن وأعد التشغيل}
+    instruction: {en: Run the trace_demo without injection; the corrected run must pass with status=ok., ar: شغّل trace_demo دون حقن؛ يجب أن ينجح التشغيل المُصحّح بحالة ok.}
+    operation_key: run_trace_demo
+    input_schema_ref: trace_demo_v1
+    validator_key: failure_diagnosis_v1
+    expected:
+      failed_run:
+        fail_step: transform
+      corrected_run:
+        status: ok
+failure_mode: |
+  An invalid fail_step (e.g. `evil-step`) produces `error_code=bad_input`.
+  The validator asserts the failed run has a populated trace_id so the
+  user can find the failing span in Grafana Tempo (ADR-0003 step 5).

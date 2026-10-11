@@ -43,14 +43,31 @@ def test_missing_id_rejected():
 
 
 def test_modules_endpoint_empty(client):
+    """G05 contract change: the /modules endpoint now returns the 10
+    manifests loaded from lab-modules/*.yaml at boot. The G01-era test
+    expected `count=0`, but that was the honest empty state before
+    manifests were wired (per the G01 report)."""
     r = client.get("/api/v1/modules")
     assert r.status_code == 200
     body = r.json()
-    assert body == {"count": 0, "ids": []}
+    assert body["count"] == 10
+    assert "graph-first-network" in body["ids"]
+    assert "integrated-challenge" in body["ids"]
 
 
 def test_experiments_endpoint_empty(client):
+    """G05 contract change: the /experiments endpoint now returns the 10
+    persisted experiment IDs. The G01-era test expected `count=0`, but
+    that was the honest empty state before the manifest loader was wired."""
     r = client.get("/api/v1/experiments")
     assert r.status_code == 200
     body = r.json()
-    assert body == {"count": 0, "ids": []}
+    assert body["count"] == 10
+    # The IDs are alphabetically sorted (the test checks the set membership).
+    expected_ids = {
+        "graph-first-network", "shortest-path", "interactive-explorer",
+        "sql-vs-cypher", "critical-dependencies", "discover-communities",
+        "trace-one-request", "build-monitoring-dashboard",
+        "diagnose-hidden-failure", "integrated-challenge",
+    }
+    assert set(body["ids"]) == expected_ids

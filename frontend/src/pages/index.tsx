@@ -1,9 +1,11 @@
 /**
- * Pages: Graph Lab is fully wired in G02 (T07); the other four remain
- * clearly-marked placeholders until their owning groups.
+ * Pages: Graph Lab is wired in G02; Observability Lab is wired in G04;
+ * Experiments and History pages are wired in G05.
  */
 import { useTranslation } from 'react-i18next';
 import { GraphLabPage } from './GraphLabPage';
+import { ExperimentsPage } from './ExperimentsPage';
+import { HistoryPage } from './HistoryPage';
 
 interface PageProps {
   title: string;
@@ -26,7 +28,6 @@ function PageShell({ title, body }: PageProps) {
         className="mt-6 rounded border border-dashed border-ink-100 bg-ink-50 p-6 text-xs text-ink-900/60"
         role="note"
       >
-        {/* Marked as a placeholder until the owning group implements it. */}
         Placeholder — wired in a later group per the V1.0 mission sequence.
       </div>
     </main>
@@ -47,18 +48,10 @@ export function HomePage() {
 
 // GraphLabPage is implemented in its own module to keep this file small.
 export { GraphLabPage };
+// ExperimentsPage + HistoryPage are wired in G05.
+export { ExperimentsPage, HistoryPage };
 
 export function ObservabilityLabPage() {
   const { t } = useTranslation();
   return <PageShell title={t('nav.observabilityLab')} />;
-}
-
-export function ExperimentsPage() {
-  const { t } = useTranslation();
-  return <PageShell title={t('nav.experiments')} />;
-}
-
-export function HistoryPage() {
-  const { t } = useTranslation();
-  return <PageShell title={t('nav.history')} />;
 }

@@ -1,0 +1,58 @@
+id: build-monitoring-dashboard
+version: 1.0.0
+module_id: observability
+level: intermediate
+estimated_minutes: 25
+title:
+  en: Build Monitoring Dashboard
+  ar: لوحة المراقبة
+description:
+  en: Observe request rate, error rate and latency over a controlled workload. P50/P95 are computed from histogram buckets.
+  ar: راقب معدل الطلبات ومعدل الأخطاء والكمون عبر حمل عمل مضبوط. يُحسب P50/P95 من حدود الهيستوغرام.
+technology: [Prometheus, Grafana]
+prerequisites: [trace-one-request]
+dataset_key: metrics-demo-v1
+required_services: [postgres]
+capabilities: [telemetry, metrics]
+public_demo_enabled: true
+steps:
+  - id: workload
+    title: {en: Run controlled workload, ar: شغّل حمل عمل مضبوط}
+    instruction: {en: Run a bounded set of lab operations so the metrics registry has observations., ar: شغّل مجموعة محدودة من عمليات المختبر ليصبح لدى سجل المقاييس قراءات.}
+    operation_key: metrics_demo
+    input_schema_ref: metrics_demo_v1
+    validator_key: metrics_demo_v1
+    expected:
+      min_http_requests: 1
+      max_p95_seconds: 10.0
+  - id: summary
+    title: {en: Open metrics summary, ar: افتح ملخص المقاييس}
+    instruction: {en: Read the metrics-summary endpoint and confirm request count, ar: اقرأ نقطة ملخص المقاييس وتأكد من ظهور عدد الطلبات والكمون ومعدل الأخطاء.}
+    operation_key: metrics_demo
+    input_schema_ref: metrics_demo_v1
+    validator_key: metrics_demo_v1
+    expected:
+      min_http_requests: 1
+      max_p95_seconds: 10.0
+  - id: inspect_dashboards
+    title: {en: Inspect Prometheus/Grafana, ar: افحص Prometheus/Grafana}
+    instruction: {en: Open the configured Prometheus and Grafana URLs (when present)., ar: افتح روابط Prometheus وGrafana (إن وُجدت).}
+    operation_key: metrics_demo
+    input_schema_ref: metrics_demo_v1
+    validator_key: metrics_demo_v1
+    expected:
+      min_http_requests: 1
+      max_p95_seconds: 10.0
+  - id: interpret
+    title: {en: Interpret, ar: التفسير}
+    instruction: {en: Confirm the units (seconds) and time window are explicit in the response., ar: أكّد أن الوحدات (ثوانٍ) والنافذة الزمنية ظاهرة في الاستجابة.}
+    operation_key: metrics_demo
+    input_schema_ref: metrics_demo_v1
+    validator_key: metrics_demo_v1
+    expected:
+      min_http_requests: 1
+      max_p95_seconds: 10.0
+failure_mode: |
+  When no workload has run, the validator fails with
+  `http_requests_total 0 < 1` and `lab_runs_total is zero`. The
+  endpoint never reports fake nonzero metrics.

@@ -35,5 +35,64 @@
   },
   "footer": {
     "version": "V1.0"
+  },
+  "experiments": {
+    "title": "Experiments",
+    "description": "Ten canonical experiments — guided and challenge modes. Each card lists the level, prerequisites, expected outputs, and the technologies involved.",
+    "level": {
+      "beginner": "Beginner",
+      "intermediate": "Intermediate",
+      "advanced": "Advanced"
+    },
+    "mode": {
+      "guided": "Guided",
+      "challenge": "Challenge"
+    },
+    "minutes": "minutes",
+    "prerequisites": "Prerequisites",
+    "requiredServices": "Required services",
+    "technology": "Technology",
+    "capabilities": "Capabilities",
+    "expectedOutputs": "Expected outputs",
+    "steps": "Steps",
+    "step": "Step",
+    "instruction": "Instruction",
+    "run": "Run",
+    "rerun": "Rerun",
+    "reset": "Reset",
+    "compare": "Compare",
+    "export": "Export",
+    "exportMd": "Export (Markdown)",
+    "exportJson": "Export (JSON)",
+    "traceId": "Trace ID",
+    "runId": "Run ID",
+    "startedAt": "Started",
+    "endedAt": "Ended",
+    "status": "Status",
+    "errorCode": "Error code",
+    "noRuns": "No runs yet for this experiment in your session.",
+    "runHistory": "Run history",
+    "selectToCompare": "Select two runs to compare",
+    "compareResults": "Comparison results",
+    "sameExperiment": "Same experiment",
+    "sameStatus": "Same final status",
+    "sameStepCount": "Same step count",
+    "verdict": "Verdict",
+    "expected": "Expected",
+    "actual": "Actual",
+    "noExperiments": "No experiments available. Make sure the backend loaded the lab-modules manifests.",
+    "failedToLoad": "Failed to load experiments. Check the backend connection.",
+    "inputsLabel": "Inputs",
+    "inputsHint": "Provide the inputs for the operation (e.g., dataset_id, fixture_key, source, target). Comma-separated key:value pairs.",
+    "runStarted": "Run started…",
+    "runCreated": "Run created",
+    "showAllSteps": "Show all steps",
+    "hideSteps": "Hide steps"
+  },
+  "history": {
+    "title": "Run History",
+    "description": "All runs in your current session. Click any run to inspect, export, or compare.",
+    "noRuns": "You have no runs yet. Visit the Experiments page to start one.",
+    "filterByExperiment": "Filter by experiment"
   }
 }

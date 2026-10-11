@@ -1,0 +1,56 @@
+id: discover-communities
+version: 1.0.0
+module_id: graph
+level: intermediate
+estimated_minutes: 25
+title:
+  en: Discover Communities
+  ar: اكتشاف التجمعات
+description:
+  en: Apply community detection to a synthetic clustered graph. Provenance must name GDS or NetworkX fallback.
+  ar: طبّق اكتشاف التجمعات على رسم مُجمّع صناعياً. يجب أن تُسمّى المصدرية كـ GDS أو بديل NetworkX.
+technology: [Neo4j-GDS, NetworkX]
+prerequisites: [shortest-path]
+dataset_key: communities-v1
+required_services: [postgres]
+capabilities: [graph-visualization, gds-optional]
+public_demo_enabled: true
+steps:
+  - id: seed
+    title: {en: Load fixture, ar: تحميل البيانات}
+    instruction: {en: Load the communities fixture (three dense clusters with one inter-cluster bridge)., ar: حمّل بيانات التجمعات (ثلاث عناقيد كثيفة مع جسر بيني واحد).}
+    operation_key: seed_graph
+    input_schema_ref: seed_graph_v1
+    validator_key: seed_five_nodes_v1
+    expected:
+      node_count: 9
+      edge_count: 10
+  - id: probe
+    title: {en: Probe GDS capabilities, ar: افحص قدرات GDS}
+    instruction: {en: Probe Neo4j connectivity and GDS availability. The result must honestly say whether GDS is licensed., ar: افحص اتصال Neo4j وتوفر GDS. يجب أن تذكر النتيجة بصدق ما إذا كان GDS مرخّصاً.}
+    operation_key: communities_detect
+    input_schema_ref: communities_v1
+    validator_key: communities_v1
+    expected:
+      expected_communities_count: 3
+  - id: project_and_run
+    title: {en: Run algorithm, ar: شغّل الخوارزمية}
+    instruction: {en: "Run community detection (GDS Louvain if available, NetworkX fallback otherwise). Provenance is mandatory.", ar: شغّل اكتشاف التجمعات (GDS Louvain إن وُجد، وإلا بديل NetworkX). المصدرية إلزامية.}
+    operation_key: communities_detect
+    input_schema_ref: communities_v1
+    validator_key: communities_v1
+    expected:
+      expected_communities_count: 3
+  - id: explain
+    title: {en: Explain limitations, ar: اشرح القيود}
+    instruction: {en: Compare the result provenance label with what was actually used. Never certify NetworkX fallback as GDS., ar: قارن وسم المصدرية بما استُخدم فعلاً. لا تصدّق بديل NetworkX كـ GDS.}
+    operation_key: communities_detect
+    input_schema_ref: communities_v1
+    validator_key: communities_v1
+    expected:
+      expected_communities_count: 3
+failure_mode: |
+  When GDS is unavailable the operation honestly reports
+  `provider=networkx_fallback` and the validator still accepts the
+  cluster membership (up to label permutation). The result is never
+  labelled GDS unless GDS actually executed the query.

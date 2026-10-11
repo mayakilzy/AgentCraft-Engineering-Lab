@@ -1,16 +1,14 @@
-"""Observability endpoints — T15.
+"""Observability endpoints — T15 + G05 (ADR-0003 Part A steps 2-3).
 
 Per the architecture contract §4 + §7:
 - `GET /api/v1/observability/links/{run_id}` returns safe configured
   dashboards or internal status, never privileged URL credentials.
 - `GET /api/v1/observability/metrics-summary` returns a bounded aggregate
   the frontend can render without needing to scrape Prometheus directly.
-- `GET /api/v1/observability/trace/{run_id}` returns the trace_id
-  correlated with a run, so the user can follow a request → processing → DB.
 
-No Grafana credentials are ever returned; only a deep-link to a
-configured base URL. When Grafana is not configured, the endpoint
-honestly reports `grafana_url: null`.
+G05 (ADR-0003 Part A steps 2 + 3): the `/links/{run_id}` endpoint now
+reads the persisted `trace_id` from the runs table (session-scoped DB
+lookup) and substitutes it into the Grafana Tempo deep-link query.
 
 G04-C1 closure (reviewer note #1): the P50/P95 calculation previously
 used `_sum` values as if they were individual samples — this was
@@ -25,12 +23,14 @@ back to a direct `histogram_quantile()` query (G07 runtime smoke).
 from __future__ import annotations
 
 import math
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.api.deps import SettingsDep
+from app.api.deps import DbDep, GuestSessionDep, SettingsDep
+from app.core.errors import NotFoundError
 from app.core.metrics import _registry
 from prometheus_client.parser import text_string_to_metric_families
 
@@ -60,31 +60,64 @@ class MetricsSummary(BaseModel):
 
 
 @router.get("/links/{run_id}", response_model=TraceLink)
-def get_trace_links(run_id: str, settings: SettingsDep) -> TraceLink:
+def get_trace_links(
+    run_id: str,
+    settings: SettingsDep,
+    db: DbDep,
+    session: GuestSessionDep,
+) -> TraceLink:
     """Return safe deep-links for tracing a run.
 
-    The trace_id is read from the run record's stored trace_id (wired in
-    G05/G06 when runs are persisted; for G04 we return null and the
-    frontend uses the x-trace-id response header captured at request time).
+    G05 (ADR-0003 Part A steps 2 + 3): the trace_id is read from the
+    persisted run record (session-scoped DB lookup). If the run does not
+    exist or belongs to another session, the endpoint returns 404 (no
+    cross-session leak). The Grafana deep-link substitutes the actual
+    trace_id into the Tempo explore URL.
 
     Grafana deep-link: `{grafana_url}/explore?left=...` — a read-only
     Tempo query by trace_id. No credentials included.
     """
+    from app.models.run import Run
+    from sqlalchemy import select
+
+    # Look up the run; 404 on missing or cross-session.
+    try:
+        rid = uuid.UUID(run_id)
+    except ValueError as exc:
+        raise NotFoundError(f"invalid run_id: {run_id}") from exc
+
+    row = db.execute(
+        select(Run).where(Run.id == rid)
+    ).scalar_one_or_none()
+    if row is None or row.session_id != session.id:
+        # Per the contract: never reveal whether the run exists across
+        # sessions — return 404.
+        raise NotFoundError(f"run not found: {run_id}")
+
+    trace_id = row.trace_id
     grafana = settings.grafana_url
     tempo_query = None
-    if grafana:
-        tempo_query = (
-            f"{grafana}/explore?left="
-            '{"datasource":"tempo","queries":[{"query":"${{traceId}}"}],'
-            '"range":{"from":"now-1h","to":"now"}}'
-        )
+    if grafana and trace_id:
+        # Substitute the actual trace_id into the Tempo explore URL.
+        # ADR-0003 step 3: the deep-link uses the trace_id from the run
+        # record so the user can click through from the run to Grafana.
+        # We build the JSON query payload manually to avoid f-string brace
+        # escaping issues; the payload is read-only in Grafana.
+        import json as _json
+        payload = {
+            "datasource": "tempo",
+            "queries": [{"query": trace_id}],
+            "range": {"from": "now-1h", "to": "now"},
+        }
+        encoded = _json.dumps(payload, separators=(",", ":"))
+        tempo_query = f"{grafana}/explore?left={encoded}"
     return TraceLink(
         run_id=run_id,
-        trace_id=None,  # populated when runs are persisted (G05+)
+        trace_id=trace_id,
         grafana_url=grafana,
         grafana_tempo_query=tempo_query,
         note=(
-            "trace_id is populated from the run record when available. "
+            "trace_id read from the run record (session-scoped). "
             "Grafana deep-link is read-only; no credentials returned."
         ),
     )

@@ -1,0 +1,56 @@
+id: graph-first-network
+version: 1.0.0
+module_id: graph
+level: beginner
+estimated_minutes: 20
+title:
+  en: Build Your First Graph
+  ar: أنشئ أول شبكة علاقات
+description:
+  en: Model five tools as nodes and connect them with directed edges. Inspect the visualization and validate endpoint integrity.
+  ar: مثّل خمس أدوات كعقد واربطها بحواف موجّهة. افحص التصور وتحقق من سلامة النهايات.
+technology: [NetworkX, PostgreSQL, Cytoscape.js]
+prerequisites: []
+dataset_key: starter-five-v1
+required_services: [postgres]
+capabilities: [graph-visualization]
+public_demo_enabled: true
+steps:
+  - id: seed
+    title: {en: Load dataset, ar: تحميل البيانات}
+    instruction: {en: Load the fixed sample of five tool nodes into your session-scoped dataset., ar: حمّل العقد التجريبية الثابتة (خمس أدوات) إلى مجموعة بياناتك.}
+    operation_key: seed_graph
+    input_schema_ref: seed_graph_v1
+    validator_key: seed_five_nodes_v1
+    expected:
+      node_count: 5
+      edge_count: 4
+      node_refs: [T1, T2, T3, T4, T5]
+      edges:
+        - [T4, T3, APP_USES_TOOL]
+        - [T4, T1, APP_USES_TOOL]
+        - [T4, T5, APP_USES_TOOL]
+        - [T2, T1, TOOL_DEPENDS_ON_TOOL]
+  - id: inspect
+    title: {en: Inspect nodes, ar: افحص العقد}
+    instruction: {en: List the seeded nodes and confirm five tools are present with correct kinds., ar: استعرض العقد المُحمّلة وتأكد من وجود خمس أدوات بالأنواع الصحيحة.}
+    operation_key: graph_metrics
+    input_schema_ref: graph_metrics_v1
+    validator_key: seed_five_nodes_v1
+    expected:
+      node_count: 5
+      edge_count: 4
+  - id: visualize
+    title: {en: Inspect visualization, ar: افحص التصور}
+    instruction: {en: Open the Graph Lab viewer and confirm the directed edges point from consumer to provider., ar: افتح عارض الرسم وتأكد أن الحواف الموجّهة تشير من المستهلك إلى المُوفّر.}
+    operation_key: graph_metrics
+    input_schema_ref: graph_metrics_v1
+    validator_key: seed_five_nodes_v1
+    expected:
+      node_count: 5
+      edge_count: 4
+failure_mode: |
+  Wrong/missing input or unavailable service leads to FAILED/BLOCKED with
+  a specific reason and mentor evidence. Seeding an unknown fixture key
+  produces `error_code=NotFoundError`; omitting dataset_id produces
+  `error_code=bad_input`.

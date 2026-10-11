@@ -1,0 +1,55 @@
+id: interactive-explorer
+version: 1.0.0
+module_id: graph
+level: beginner
+estimated_minutes: 25
+title:
+  en: Interactive Graph Explorer
+  ar: استكشاف الرسم تفاعلياً
+description:
+  en: Load a mixed-kind graph, change the layout, filter by kind and inspect node/edge details. Confirm the original data is unaffected.
+  ar: حمّل رسماً مختلط الأنواع، غيّر التخطيط، صفِ حسب النوع وافحص تفاصيل العقد والحواف. أكّد أن البيانات الأصلية لم تتأثر.
+technology: [Cytoscape.js]
+prerequisites: [graph-first-network]
+dataset_key: mixed-kind-v1
+required_services: [postgres]
+capabilities: [graph-visualization]
+public_demo_enabled: true
+steps:
+  - id: seed
+    title: {en: Load mixed-kind graph, ar: حمّل الرسم مختلط الأنواع}
+    instruction: {en: "Load the mixed-kind fixture (apps, tools, skills).", ar: حمّل بيانات الأنواع المختلطة (تطبيقات، أدوات، مهارات).}
+    operation_key: seed_graph
+    input_schema_ref: seed_graph_v1
+    validator_key: seed_five_nodes_v1
+    expected:
+      node_count: 6
+      edge_count: 5
+  - id: filter_skills
+    title: {en: Filter skills, ar: تصفية المهارات}
+    instruction: {en: Filter the graph to show only skill-kind nodes., ar: صفِ الرسم لإظهار عقد المهارات فقط.}
+    operation_key: filter_by_kind
+    input_schema_ref: filter_by_kind_v1
+    validator_key: filter_by_kind_v1
+    expected:
+      matched_node_refs: [SKILL1, SKILL2]
+  - id: filter_apps
+    title: {en: Filter apps, ar: تصفية التطبيقات}
+    instruction: {en: Filter the graph to show only app-kind nodes and confirm the original data is unaffected., ar: صفِ الرسم لإظهار عقد التطبيقات وتأكد أن البيانات الأصلية لم تتأثر.}
+    operation_key: filter_by_kind
+    input_schema_ref: filter_by_kind_v1
+    validator_key: filter_by_kind_v1
+    expected:
+      matched_node_refs: [APP1, APP2]
+  - id: reset_view
+    title: {en: Reset view, ar: إعادة ضبط العرض}
+    instruction: {en: Clear the filter and confirm all six nodes are visible again., ar: امسح التصفية وتأكد من ظهور العقد الست مرة أخرى.}
+    operation_key: filter_by_kind
+    input_schema_ref: filter_by_kind_v1
+    validator_key: filter_by_kind_v1
+    expected:
+      matched_node_refs: [APP1, APP2, SKILL1, SKILL2, TOOL1, TOOL2]
+failure_mode: |
+  A wrong expected subset (e.g. expecting APP1/APP2 after filtering for
+  skills) makes the validator fail honestly. The validator never silently
+  passes on a mismatched subset.
