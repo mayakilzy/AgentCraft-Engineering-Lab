@@ -1,8 +1,9 @@
 /**
- * Pages: thin placeholders per the G01 contract (T03 = shell + nav + tests).
- * Each page is a clearly-marked stub that later groups will fill.
+ * Pages: Graph Lab is fully wired in G02 (T07); the other four remain
+ * clearly-marked placeholders until their owning groups.
  */
 import { useTranslation } from 'react-i18next';
+import { GraphLabPage } from './GraphLabPage';
 
 interface PageProps {
   title: string;
@@ -44,10 +45,8 @@ export function HomePage() {
   );
 }
 
-export function GraphLabPage() {
-  const { t } = useTranslation();
-  return <PageShell title={t('nav.graphLab')} />;
-}
+// GraphLabPage is implemented in its own module to keep this file small.
+export { GraphLabPage };
 
 export function ObservabilityLabPage() {
   const { t } = useTranslation();

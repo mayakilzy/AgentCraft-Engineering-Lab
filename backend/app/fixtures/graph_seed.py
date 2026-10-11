@@ -65,7 +65,7 @@ STARTER_FIVE_V1 = GraphFixture(
         FixtureEdge("T4", "T3", "APP_USES_TOOL"),  # FastAPI -> PostgreSQL
         FixtureEdge("T4", "T1", "APP_USES_TOOL"),  # FastAPI -> NetworkX
         FixtureEdge("T4", "T5", "APP_USES_TOOL"),  # FastAPI -> OpenTelemetry
-        FixtureEdge("T2", "T1", "TOOL_DEPENDS_ON_TOOL"),  # Cytoscape <-> NetworkX
+        FixtureEdge("T2", "T1", "TOOL_DEPENDS_ON_TOOL"),  # Cytoscape -> NetworkX
     ),
     expected={
         "node_count": 5,
@@ -75,8 +75,74 @@ STARTER_FIVE_V1 = GraphFixture(
 )
 
 
+# E02 fixture: directed dependency path A -> T3 with a known shortest path
+# plus a disconnected pair to verify unreachable handling.
+DIRECTED_PATH_V1 = GraphFixture(
+    dataset_key="directed-path-v1",
+    version="1.0.0",
+    nodes=(
+        FixtureNode("A", "app", "App A"),
+        FixtureNode("B", "app", "App B"),
+        FixtureNode("T1", "tool", "Tool T1"),
+        FixtureNode("T2", "tool", "Tool T2"),
+        FixtureNode("T3", "tool", "Tool T3 (target)"),
+        FixtureNode("ISO", "tool", "Isolated"),  # disconnected component
+    ),
+    edges=(
+        FixtureEdge("A", "T1", "APP_USES_TOOL"),
+        FixtureEdge("T1", "T2", "TOOL_DEPENDS_ON_TOOL"),
+        FixtureEdge("T2", "T3", "TOOL_DEPENDS_ON_TOOL"),
+        FixtureEdge("B", "T1", "APP_USES_TOOL"),
+    ),
+    expected={
+        "node_count": 6,
+        "edge_count": 4,
+        # A -> T1 -> T2 -> T3 (length 3 = 4 nodes)
+        "path_A_to_T3": ["A", "T1", "T2", "T3"],
+        "path_A_to_T3_length": 3,
+        # ISO is unreachable from A
+        "path_A_to_ISO": None,
+    },
+)
+
+
+# E03 fixture: mixed-kind graph for layout/filter/select exercises.
+MIXED_KIND_V1 = GraphFixture(
+    dataset_key="mixed-kind-v1",
+    version="1.0.0",
+    nodes=(
+        FixtureNode("APP1", "app", "App One"),
+        FixtureNode("APP2", "app", "App Two"),
+        FixtureNode("TOOL1", "tool", "Tool One"),
+        FixtureNode("TOOL2", "tool", "Tool Two"),
+        FixtureNode("SKILL1", "skill", "Skill Alpha"),
+        FixtureNode("SKILL2", "skill", "Skill Beta"),
+    ),
+    edges=(
+        FixtureEdge("APP1", "TOOL1", "APP_USES_TOOL"),
+        FixtureEdge("APP1", "SKILL1", "APP_NEEDS_SKILL"),
+        FixtureEdge("APP2", "TOOL2", "APP_USES_TOOL"),
+        FixtureEdge("APP2", "SKILL2", "APP_NEEDS_SKILL"),
+        FixtureEdge("TOOL1", "TOOL2", "TOOL_DEPENDS_ON_TOOL"),
+    ),
+    expected={
+        "node_count": 6,
+        "edge_count": 5,
+        "kinds": ("app", "tool", "skill"),
+        "app_nodes": ["APP1", "APP2"],
+        "skill_nodes": ["SKILL1", "SKILL2"],
+        "tool_nodes": ["TOOL1", "TOOL2"],
+    },
+)
+
+
+_FIXTURES: dict[str, GraphFixture] = {
+    STARTER_FIVE_V1.dataset_key: STARTER_FIVE_V1,
+    DIRECTED_PATH_V1.dataset_key: DIRECTED_PATH_V1,
+    MIXED_KIND_V1.dataset_key: MIXED_KIND_V1,
+}
+
+
 def get_fixture(dataset_key: str) -> GraphFixture | None:
     """Lookup by dataset key. Returns None for unknown — fail-closed."""
-    if dataset_key == STARTER_FIVE_V1.dataset_key:
-        return STARTER_FIVE_V1
-    return None
+    return _FIXTURES.get(dataset_key)

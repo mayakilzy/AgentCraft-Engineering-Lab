@@ -55,6 +55,122 @@ export interface ModulesResponse {
   ids: string[];
 }
 
+// ---- Graph ----
+export interface CytoscapeNodeData {
+  id: string;
+  label: string;
+  kind: string;
+}
+export interface CytoscapeEdgeData {
+  id: string;
+  source: string;
+  target: string;
+  relation: string;
+}
+export interface CytoscapeElement {
+  group: 'nodes' | 'edges';
+  data: CytoscapeNodeData | CytoscapeEdgeData;
+}
+export interface GraphReadResponse {
+  dataset_id: string;
+  session_id: string;
+  elements: CytoscapeElement[];
+  node_count: number;
+  edge_count: number;
+}
+export interface SeedResponse {
+  dataset_id: string;
+  node_count: number;
+  edge_count: number;
+}
+export interface ShortestPathResponse {
+  dataset_id: string;
+  source: string;
+  target: string;
+  path: string[] | null;
+  length: number | null;
+}
+export interface MetricsResponse {
+  dataset_id: string;
+  node_count: number;
+  edge_count: number;
+  is_directed: boolean;
+  is_dag: boolean;
+  weakly_connected_components: number;
+  strongly_connected_components: number;
+  density: number;
+  selfloops: string[];
+}
+
+// ---- Sessions ----
+export interface GuestCreateResponse {
+  session_id: string;
+  expires_at: string;
+  locale: string;
+}
+
+export async function createGuestSession(locale: 'en' | 'ar' = 'en'): Promise<GuestCreateResponse> {
+  const res = await fetch('/api/v1/sessions/guest', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Request-Id': newRequestId(),
+    },
+    body: JSON.stringify({ locale }),
+  });
+  return parseResponse<GuestCreateResponse>(res);
+}
+
+export async function getGraph(datasetId: string): Promise<GraphReadResponse> {
+  return apiGet<GraphReadResponse>(`/api/v1/graph/${encodeURIComponent(datasetId)}`);
+}
+
+export async function seedGraph(
+  datasetId: string,
+  fixtureKey: string,
+): Promise<SeedResponse> {
+  const res = await fetch(
+    `/api/v1/graph/${encodeURIComponent(datasetId)}/seed`,
+    {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Request-Id': newRequestId(),
+      },
+      body: JSON.stringify({ dataset_key: fixtureKey }),
+    },
+  );
+  return parseResponse<SeedResponse>(res);
+}
+
+export async function shortestPath(
+  datasetId: string,
+  source: string,
+  target: string,
+): Promise<ShortestPathResponse> {
+  const res = await fetch(
+    `/api/v1/graph/${encodeURIComponent(datasetId)}/shortest-path`,
+    {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Request-Id': newRequestId(),
+      },
+      body: JSON.stringify({ source, target }),
+    },
+  );
+  return parseResponse<ShortestPathResponse>(res);
+}
+
+export async function getMetrics(datasetId: string): Promise<MetricsResponse> {
+  return apiGet<MetricsResponse>(
+    `/api/v1/graph/${encodeURIComponent(datasetId)}/metrics`,
+  );
+}
+
 export async function getHealthLive(): Promise<LiveResponse> {
   return apiGet<LiveResponse>('/api/v1/health/live');
 }

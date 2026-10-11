@@ -49,14 +49,25 @@ def _reset_engines() -> None:
     _SessionLocal = None
 
 
-def SessionLocal() -> sessionmaker:  # type: ignore[misc]
+def _build_session_factory() -> sessionmaker:
+    return sessionmaker(
+        bind=get_engine(),
+        autoflush=False,
+        expire_on_commit=False,
+        future=True,
+    )
+
+
+def get_session_factory() -> sessionmaker:
     """Return the cached session factory, building on first call."""
     global _SessionLocal
     if _SessionLocal is None:
-        _SessionLocal = sessionmaker(
-            bind=get_engine(),
-            autoflush=False,
-            expire_on_commit=False,
-            future=True,
-        )
+        _SessionLocal = _build_session_factory()
     return _SessionLocal
+
+
+# Public alias: `SessionLocal()` returns a Session, not a sessionmaker.
+# Backed by a property-like accessor so importers can call it directly.
+def SessionLocal() -> "Session":  # type: ignore[valid-type]
+    """Return a new Session. Backed by the cached sessionmaker."""
+    return get_session_factory()()
