@@ -40,6 +40,10 @@ def seed_graph_op(
     Inputs:
       dataset_id : str  (target scope in the session)
       fixture_key: str (e.g., 'starter-five-v1')
+
+    Outputs (on success) include the full node_refs and edges lists so the
+    E01 validator can check endpoint integrity (G02 reviewer note #3), not
+    just counts.
     """
     dataset_id = inputs.get("dataset_id")
     fixture_key = inputs.get("fixture_key")
@@ -52,6 +56,10 @@ def seed_graph_op(
         )
     try:
         summary = graph_service.load_fixture(db, settings, session, dataset_id, fixture_key)
+        # Fetch the seeded node_refs + edges so the validator can check
+        # endpoint integrity (G02 reviewer note #3).
+        nodes = graph_service.list_nodes(db, session, dataset_id)
+        edges = graph_service.list_edges(db, session, dataset_id)
         return OperationResult(
             operation_key="seed_graph",
             status="ok",
@@ -59,6 +67,11 @@ def seed_graph_op(
                 "dataset_id": summary["dataset_id"],
                 "node_count": summary["node_count"],
                 "edge_count": summary["edge_count"],
+                "node_refs": [n.node_ref for n in nodes],
+                "edges": [
+                    (s_ref, t_ref, e.relation)
+                    for (e, s_ref, t_ref) in edges
+                ],
             },
         )
     except Exception as exc:  # noqa: BLE001 — surfaces a deterministic failure

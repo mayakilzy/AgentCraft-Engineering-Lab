@@ -18,6 +18,7 @@ from app.api.v1 import sessions as sessions_router
 from app.api.v1 import graph as graph_router
 from app.api.v1 import graph_analysis as graph_analysis_router
 from app.api.v1 import seed as seed_router
+from app.api.v1 import lab as lab_router
 from app.config import Settings, get_settings
 from app.core.errors import (
     AppError,
@@ -99,6 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(graph_router.router, prefix="/api/v1")
     app.include_router(graph_analysis_router.router, prefix="/api/v1")
     app.include_router(seed_router.router, prefix="/api/v1")
+    app.include_router(lab_router.router, prefix="/api/v1")
 
     @app.get(
         "/api/v1/modules",

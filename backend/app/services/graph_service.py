@@ -214,13 +214,24 @@ def load_fixture(
     target_dataset_id: str,
     fixture_key: str,
 ) -> dict:
-    """Idempotently load a named fixture into a (session, dataset) scope.
+    """Idempotently and atomically load a named fixture into a (session,
+    dataset) scope.
 
     `target_dataset_id` is the caller-chosen dataset scope name (the path
     parameter on the API). `fixture_key` selects which seeded fixture to
     load (e.g., "starter-five-v1"). If the target dataset already has rows,
     the loader is a no-op (deterministic reruns); the caller gets back the
     existing counts.
+
+    Atomicity (per G02 reviewer note #2): the entire load happens inside a
+    single SQLAlchemy transaction. If any node or edge insert fails (e.g.,
+    a duplicate key, a referential-integrity violation, or a cardinality
+    cap hit mid-load), the transaction is rolled back so no partial data
+    is left in the (session, dataset) scope.
+
+    Implementation: we stage all rows in the session without flushing,
+    then issue a single `flush()` + `commit()` at the end. Any exception
+    triggers `rollback()` and re-raises.
     """
     from app.fixtures.graph_seed import get_fixture
 
@@ -229,26 +240,133 @@ def load_fixture(
         raise NotFoundError(f"unknown fixture: {fixture_key}")
 
     summary = get_dataset_summary(db, session, target_dataset_id)
-    if summary["node_count"] == 0 and summary["edge_count"] == 0:
+    if summary["node_count"] != 0 or summary["edge_count"] != 0:
+        log.info(
+            "fixture load skipped (dataset non-empty)",
+            extra={
+                "target_dataset_id": target_dataset_id,
+                "fixture_key": fixture_key,
+                "existing_node_count": summary["node_count"],
+                "existing_edge_count": summary["edge_count"],
+            },
+        )
+        return summary
+
+    # Atomic load: stage everything, commit once, rollback on any failure.
+    try:
+        # Pre-flight cardinality check so we fail BEFORE partial work.
+        if len(fixture.nodes) > settings.max_graph_nodes:
+            raise InvalidStateError(
+                "fixture would exceed max_graph_nodes",
+                details={
+                    "fixture_node_count": len(fixture.nodes),
+                    "limit": settings.max_graph_nodes,
+                },
+            )
+        if len(fixture.edges) > settings.max_graph_edges:
+            raise InvalidStateError(
+                "fixture would exceed max_graph_edges",
+                details={
+                    "fixture_edge_count": len(fixture.edges),
+                    "limit": settings.max_graph_edges,
+                },
+            )
+
+        # Pre-flight duplicate-detection within the fixture itself so we
+        # never start a partial load that fails mid-way on a DB unique
+        # constraint.
+        seen_refs: set[str] = set()
         for n in fixture.nodes:
-            add_node(
-                db, settings, session, target_dataset_id,
-                node_ref=n.ref, kind=n.kind, label=n.label,
-                attributes=dict(n.attributes),
-            )
+            if n.ref in seen_refs:
+                raise InvalidStateError(
+                    "fixture has duplicate node_ref",
+                    details={"node_ref": n.ref, "fixture_key": fixture_key},
+                )
+            seen_refs.add(n.ref)
+        seen_edges: set[tuple[str, str, str]] = set()
         for e in fixture.edges:
-            add_edge(
-                db, settings, session, target_dataset_id,
-                source_ref=e.source_ref, target_ref=e.target_ref,
-                relation=e.relation, attributes=dict(e.attributes),
+            key = (e.source_ref, e.target_ref, e.relation)
+            if key in seen_edges:
+                raise InvalidStateError(
+                    "fixture has duplicate edge triplet",
+                    details={
+                        "source_ref": e.source_ref,
+                        "target_ref": e.target_ref,
+                        "relation": e.relation,
+                    },
+                )
+            seen_edges.add(key)
+            if e.source_ref == e.target_ref:
+                raise InvalidStateError(
+                    "fixture has self-loop edge (V1 disallows)",
+                    details={"node_ref": e.source_ref},
+                )
+            if e.source_ref not in seen_refs:
+                raise InvalidStateError(
+                    "fixture edge references unknown source node",
+                    details={
+                        "source_ref": e.source_ref,
+                        "fixture_key": fixture_key,
+                    },
+                )
+            if e.target_ref not in seen_refs:
+                raise InvalidStateError(
+                    "fixture edge references unknown target node",
+                    details={
+                        "target_ref": e.target_ref,
+                        "fixture_key": fixture_key,
+                    },
+                )
+
+        # Stage all nodes — bypass the public add_node() because that
+        # commits per call; we want a single transaction.
+        node_id_by_ref: dict[str, uuid.UUID] = {}
+        for n in fixture.nodes:
+            node = GraphNode(
+                id=uuid.uuid4(),
+                session_id=session.id,
+                dataset_id=target_dataset_id,
+                node_ref=n.ref,
+                kind=n.kind,
+                label=n.label,
+                attributes_json=dict(n.attributes) if n.attributes else None,
             )
+            db.add(node)
+            db.flush()  # assign PK without committing
+            node_id_by_ref[n.ref] = node.id
+
+        # Stage all edges.
+        for e in fixture.edges:
+            edge = GraphEdge(
+                id=uuid.uuid4(),
+                session_id=session.id,
+                dataset_id=target_dataset_id,
+                source_id=node_id_by_ref[e.source_ref],
+                target_id=node_id_by_ref[e.target_ref],
+                relation=e.relation,
+                attributes_json=dict(e.attributes) if e.attributes else None,
+            )
+            db.add(edge)
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.warning(
+            "fixture load rolled back",
+            extra={
+                "target_dataset_id": target_dataset_id,
+                "fixture_key": fixture_key,
+            },
+        )
+        raise
+
     log.info(
         "loaded fixture",
         extra={
             "target_dataset_id": target_dataset_id,
             "fixture_key": fixture_key,
-            "node_count": summary["node_count"] or len(fixture.nodes),
-            "edge_count": summary["edge_count"] or len(fixture.edges),
+            "node_count": len(fixture.nodes),
+            "edge_count": len(fixture.edges),
         },
     )
     return get_dataset_summary(db, session, target_dataset_id)

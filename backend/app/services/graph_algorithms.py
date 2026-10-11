@@ -149,29 +149,85 @@ def graph_metrics(g: nx.DiGraph) -> Dict[str, object]:
     }
 
 
-# ---- Removal simulation (used by E05 in G03+, exposed early as a stable op) ----
+# ---- Removal simulation (E05 / T12) ----
 
 def simulate_node_removal_reachability(
     g: nx.DiGraph, target: str
 ) -> Dict[str, List[str]]:
-    """For each predecessor of `target`, compute which other nodes would
-    lose their path to `target` if `target` were removed. Used by critical-
-    dependency analysis; we do NOT mutate the original graph.
+    """Compute the directed reachability delta if `target` were removed.
+
+    For each source S (other than `target`), returns the sorted list of
+    nodes that were reachable from S *before* the removal but become
+    *unreachable* after removing `target`. This is the directed impact of
+    removing `target` from the network.
+
+    Semantics (per the architecture contract §6):
+    - Edges are directed. Removing `target` affects only downstream nodes
+      (descendants of `target`).
+    - If a downstream node has an *alternative* path from S that does not
+      go through `target`, it stays reachable and is NOT in the lost set.
+    - The original graph is NEVER mutated; we work on a copy.
+
+    The previous (G02) implementation confused "lost paths to `target`"
+    with "lost paths through `target`" — fixed in this rewrite per G02
+    reviewer note #1.
     """
     if target not in g:
         raise ValueError(f"node not in graph: {target}")
-    out: Dict[str, List[str]] = {}
-    # The nodes that currently can reach `target`:
-    current_reachers = reachable_ancestors(g, target)
-    # Simulate removal by copying the graph.
+
+    # Pre-removal reachability from every source (excluding `target` itself).
+    before = {
+        s: set(nx.descendants(g, s)) for s in g.nodes if s != target
+    }
+
+    # Simulate removal on a copy.
     g2 = g.copy()
     g2.remove_node(target)
-    for node in current_reachers:
-        # After removing `target`, find which of the other current-reachers
-        # still can reach `node` (i.e., did they lose a path that went
-        # through `target`?).
-        # This is a simplistic reachability delta; E05 in G05 will refine.
-        reachers_after = reachable_ancestors(g2, node)
-        lost = sorted(set(current_reachers) - set(reachers_after) - {target, node})
-        out[node] = lost
+
+    # Post-removal reachability from the same set of sources (those that
+    # are still in the graph).
+    after = {
+        s: set(nx.descendants(g2, s)) for s in g2.nodes if s != target
+    }
+
+    out: Dict[str, List[str]] = {}
+    for s, before_set in before.items():
+        lost = before_set - after.get(s, set()) - {target}
+        out[s] = sorted(lost)
     return out
+
+
+def critical_dependencies(
+    g: nx.DiGraph, target: str
+) -> Dict[str, object]:
+    """E05 analysis: directed reachability impact vs naive degree centrality.
+
+    Returns:
+      impact_set: sorted list of nodes that become unreachable from any
+        source after removing `target` (the union of all `lost` lists).
+      impact_size: len(impact_set)
+      target_in_degree: in-degree of `target` (naive centrality)
+      target_out_degree: out-degree of `target`
+      target_degree_centrality: NetworkX degree_centrality value
+      note: explicit warning that 'most central' is NOT the same as
+        'operationally critical'; this function reports both honestly.
+
+    Per the architecture contract §6: 'Do not confuse most central with
+    operational criticality.' We surface both metrics and a note.
+    """
+    if target not in g:
+        raise ValueError(f"node not in graph: {target}")
+
+    delta = simulate_node_removal_reachability(g, target)
+    impact_set = sorted({n for lost in delta.values() for n in lost})
+
+    return {
+        "target": target,
+        "impact_set": impact_set,
+        "impact_size": len(impact_set),
+        "target_in_degree": g.in_degree(target),
+        "target_out_degree": g.out_degree(target),
+        "target_degree_centrality": nx.degree_centrality(g).get(target, 0.0),
+        "note": "Degree centrality measures connectivity; reachability impact "
+                "measures operational criticality. They are different signals.",
+    }
