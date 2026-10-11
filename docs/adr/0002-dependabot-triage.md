@@ -34,18 +34,23 @@ and do not defer sorting them.
 
 ## Decision
 
-### A. Upgrade vitest to the latest stable (resolves #4, #9, #10, #12, #13)
+### A. Upgrade vitest to 4.1.11 (resolves #4, #9, #10, #12, #13)
 
-Vitest 2.1.x → Vitest 3.2.x. This pulls:
-- `@vitest/mocker` 4.x (resolves #9, #10)
-- `tinypool` 2.1.2+ (resolves #12, #13)
+Initial attempt was vitest 3.2.7, but that still pulled `tinypool@1.1.1`
+(below the 2.1.2 fix) and `@vitest/mocker@3.2.7` (below the 4.1.11 fix).
+Bumping to vitest 4.1.11 resolves all five alerts:
+- `vitest` itself: 4.1.11 ≥ 4.1.11 (resolves #10 medium) and ≥ 3.2.6 (resolves #4 critical)
+- `@vitest/mocker`: 4.1.11 ≥ 4.1.11 (resolves #9 medium)
+- `tinypool`: vitest 4.x no longer depends on tinypool (resolves #12 + #13 criticals)
 
-### B. Upgrade vite to a version ≥ 6.4.3 (resolves #2, #3, #5, #6)
+### B. Upgrade vite to 6.4.4 (resolves #2, #3, #5, #6)
 
-Vitest 3.x requires Vite 6.x. The production build artifact is unaffected;
-the CVEs target `vite dev` and `launch-editor` (Windows-only). Upgrading
-keeps the toolchain consistent with vitest 3.x and resolves the alerts
-without forcing a separate major-version bump.
+Vitest 4.x is compatible with vite 6.x. The production build artifact is
+unaffected; the CVEs target `vite dev` and `launch-editor` (Windows-only).
+Upgrading keeps the toolchain consistent with vitest 4.x and resolves all
+four vite alerts:
+- `vite` 6.4.4 ≥ 6.4.3 (resolves #3 medium + #5 high + #6 medium)
+- `esbuild` 0.25.12 ≥ 0.25.0 (resolves #2 medium, transitively via vite)
 
 ### C. Document react-router triage (defer fix to G07)
 
