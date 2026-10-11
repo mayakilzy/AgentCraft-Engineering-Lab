@@ -1,0 +1,39 @@
+{
+  "app": {
+    "title": "AgentCraft Engineering Lab",
+    "subtitle": "Hands-on graph intelligence and observability lab"
+  },
+  "nav": {
+    "home": "Home",
+    "graphLab": "Graph Lab",
+    "observabilityLab": "Observability Lab",
+    "experiments": "Experiments",
+    "history": "History"
+  },
+  "home": {
+    "hero": "Learn graph intelligence and observability by doing",
+    "description": "Ten canonical experiments. Real runs, real traces, real diagnostics. No mock success."
+  },
+  "common": {
+    "status": {
+      "notStarted": "Not started",
+      "running": "Running",
+      "passed": "Passed",
+      "failed": "Failed",
+      "blocked": "Blocked"
+    },
+    "loading": "Loading…",
+    "error": "Something went wrong",
+    "language": "Language"
+  },
+  "health": {
+    "live": "Live",
+    "ready": "Ready",
+    "degraded": "Degraded",
+    "notReady": "Not ready",
+    "services": "Services"
+  },
+  "footer": {
+    "version": "V1.0"
+  }
+}

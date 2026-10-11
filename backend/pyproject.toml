@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentcraft-backend"
+version = "0.1.0"
+description = "AgentCraft Engineering Lab — FastAPI backend"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi==0.128.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.9.0",
+  "pydantic-settings==2.7.1",
+  "SQLAlchemy==2.0.36",
+  "alembic==1.14.1",
+  "psycopg2-binary==2.9.10",
+  "asyncpg==0.30.0",
+  "httpx==0.28.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==8.3.4",
+  "pytest-asyncio==0.25.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["app/tests"]
+addopts = "-q"
+asyncio_mode = "auto"
+filterwarnings = [
+  "ignore::DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

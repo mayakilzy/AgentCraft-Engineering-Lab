@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  @apply bg-ink-50 text-ink-900 font-sans antialiased;
+}
+
+/* RTL: switch to Arabic font and flip layout direction. */
+[dir='rtl'] {
+  @apply font-arabic;
+}
+
+/* Focus ring for keyboard accessibility (spec §5: keyboard accessible). */
+:focus-visible {
+  outline: 2px solid theme('colors.accent.500');
+  outline-offset: 2px;
+}
