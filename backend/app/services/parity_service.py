@@ -151,11 +151,10 @@ def run_parity(
             },
         )
 
-    # Use the SAME label format that `import_fixture` builds so the parity
-    # query reads the namespace we actually imported into.
-    ns = neo4j_service.session_namespace(session.id)
-    ds_label = f"ds_{dataset_id.replace('-', '_')}"
-    full_label = f"__{ns}__{ds_label}__"
+    # Use the SAME label function that `import_fixture` uses so the
+    # parity query reads the namespace we actually imported into.
+    # Per G03-C1 reviewer note #2: shared label helper, no duplication.
+    full_label = neo4j_service.dataset_label(session.id, dataset_id)
     cypher = cypher_queries.get_query(query_key, full_label)
     params = {"app_ref": ""}  # placeholder; queries without params ignore it
     cypher_rows: list[dict] = []

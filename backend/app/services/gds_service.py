@@ -10,10 +10,22 @@ This module exposes `detect_communities(settings, session, dataset_id)`
 which:
 1. Probes Neo4j connectivity + GDS availability.
 2. If GDS is available AND licensed: project the session-scoped graph
-   into GDS and run `gds.louvain.stream` (or the compatible alternative).
+   into GDS via the documented `gds.graph.project(name, nodeLabel, '*')`
+   API, run `gds.louvain.stream`, resolve nodeIds back to node_refs, and
+   GUARANTEE the projection is dropped in a `finally` block.
 3. If GDS is NOT available OR not licensed: run the equivalent NetworkX
    community-detection algorithm and return results labelled
    `provider='networkx_fallback'`. The result is never labelled GDS.
+
+G03-C1 reviewer notes addressed here:
+- #1: Graph Projection now uses the supported `gds.graph.project(name,
+  nodeLabel, '*')` signature (was previously a malformed string-interpolated
+  subquery attempt).
+- #2: Label name comes from the shared `neo4j_service.dataset_label()`.
+- #3: nodeId→node_ref resolution uses the same label and matches on the
+  internal `id(n)` returned by both the Louvain stream and the ref lookup.
+- #4: Projection lifecycle is wrapped in try/finally; cleanup runs even
+  when Louvain raises.
 """
 from __future__ import annotations
 
@@ -68,38 +80,60 @@ def detect_communities(
             ),
         )
 
-    # GDS available + licensed: project and run Louvain.
+    # GDS available + licensed: project and run Louvain, with guaranteed
+    # projection cleanup in a finally block.
     driver = neo4j_service.get_driver(settings)
     if driver is None:
         # Should not happen (we just verified connectivity), but be defensive.
         return _networkx_fallback(db, session, dataset_id, note="driver_disposed")
 
-    label = neo4j_service.session_namespace(session.id) + "_" + dataset_id.replace("-", "_")
+    full_label = neo4j_service.dataset_label(session.id, dataset_id)
+    graph_name = f"g_{full_label}"
+
     try:
-        with driver.session(database=settings.neo4j_database) as s:
-            # Project the session-scoped subgraph into a GDS graph.
-            graph_name = f"g_{label}"
-            s.run(
-                "CALL gds.graph.project("
-                "$name, "
-                "MATCH (n:`__{label}__`) RETURN id(n) AS id, n.kind AS kind, "
-                "MATCH (n:`__{label}__`)-[r]->(m:`__{label}__`) "
-                "RETURN id(n) AS source, id(m) AS target, type(r) AS type".format(label=label),
-                name=graph_name,
-            )
-            # Stream Louvain communities.
-            result = s.run(
+        sess = driver.session(database=settings.neo4j_database)
+    except Exception as exc:
+        return _networkx_fallback(
+            db, session, dataset_id,
+            note=f"session_open_failed: {type(exc).__name__}",
+        )
+
+    try:
+        # ---- Project the session-scoped subgraph into GDS ----
+        # Per G03-C1 reviewer note #1: use the documented
+        # `gds.graph.project(graphName, nodeSpec, relationshipSpec)` signature.
+        # nodeSpec = the session-scoped label (parameterised as $nodeLabel).
+        # relationshipSpec = '*' projects all relationship types whose both
+        # endpoints carry the projected label (GDS does this automatically;
+        # cross-label relationships are excluded).
+        sess.run(
+            "CALL gds.graph.project($name, $nodeLabel, '*')",
+            name=graph_name,
+            nodeLabel=full_label,
+        )
+
+        # Run Louvain INSIDE a try/finally so the projection is always
+        # dropped even if the algorithm call fails.
+        try:
+            louvain_result = sess.run(
                 "CALL gds.louvain.stream($name) "
                 "YIELD nodeId, communityId "
                 "RETURN nodeId, communityId",
                 name=graph_name,
             )
-            rows = [r.data() for r in result]
+            rows = [r.data() for r in louvain_result]
+
             # Resolve GDS internal node ids back to node_refs.
-            ref_rows = s.run(
-                "MATCH (n:`__{label}__`) RETURN id(n) AS id, n.ref AS ref".format(label=label)
+            # Per note #3: use the SAME label and the SAME id(n) so the
+            # lookup matches the Louvain nodeId.
+            ref_result = sess.run(
+                f"MATCH (n:`{full_label}`) "
+                f"RETURN id(n) AS id, n.ref AS ref"
             )
-            id_to_ref = {r["id"]: r["ref"] for r in ref_rows}
+            id_to_ref: dict[int, str] = {
+                r["id"]: r["ref"] for r in ref_result
+            }
+
             communities_by_id: dict[int, list[str]] = {}
             for r in rows:
                 cid = r["communityId"]
@@ -107,16 +141,39 @@ def detect_communities(
                 ref = id_to_ref.get(nid)
                 if ref is not None:
                     communities_by_id.setdefault(cid, []).append(ref)
-            # Drop the projection.
-            s.run("CALL gds.graph.drop($name)", name=graph_name)
+
             communities = [sorted(v) for v in communities_by_id.values()]
             return CommunityResult(
                 provider="gds",
                 algorithm="louvain",
                 communities=communities,
                 modularity=None,
-                note="gds.louvain.stream; projection dropped after use",
+                note=(
+                    "gds.louvain.stream on session-scoped projection; "
+                    "projection dropped after use"
+                ),
             )
+        finally:
+            # GUARANTEED cleanup — drop the projection even if Louvain
+            # or the ref lookup raised. We catch cleanup errors so they
+            # never mask the original exception (per G03-C1 note #4).
+            try:
+                sess.run(
+                    "CALL gds.graph.drop($name, false)",
+                    name=graph_name,
+                )
+                log.info(
+                    "gds projection dropped (cleanup)",
+                    extra={"graph_name": graph_name},
+                )
+            except Exception as cleanup_exc:
+                log.warning(
+                    "gds projection cleanup failed",
+                    extra={
+                        "graph_name": graph_name,
+                        "error": f"{type(cleanup_exc).__name__}: {cleanup_exc}",
+                    },
+                )
     except Exception as exc:
         log.warning(
             "gds community detection failed; falling back to NetworkX",
@@ -126,6 +183,12 @@ def detect_communities(
             db, session, dataset_id,
             note=f"gds_call_failed: {type(exc).__name__}",
         )
+    finally:
+        # Always close the driver session.
+        try:
+            sess.close()
+        except Exception:
+            pass
 
 
 def _networkx_fallback(

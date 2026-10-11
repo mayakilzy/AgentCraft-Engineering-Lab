@@ -170,6 +170,26 @@ def session_namespace(session_id: Any) -> str:
     return f"sess_{sid[:12]}"
 
 
+def dataset_label(session_id: Any, dataset_id: str) -> str:
+    """The single source of truth for the Neo4j label that scopes a
+    (session, dataset) pair. Used by import_fixture, gds_service, and
+    parity_service so they all read/write the SAME label.
+
+    Per G03-C1 reviewer note #2: a small shared function, no new
+    abstraction layer.
+
+    Format: ``__<namespace>__<ds_label>__`` where:
+      - ``<namespace>`` = ``sess_<12-char hex>`` (from session_namespace)
+      - ``<ds_label>`` = ``ds_<sanitized dataset_id>``
+    The leading/trailing ``__`` keeps the label visually distinct from
+    any fixture-declared labels and makes namespace-prefix cleanup
+    (`STARTS WITH $ns_prefix`) reliable.
+    """
+    ns = session_namespace(session_id)
+    ds = f"ds_{dataset_id.replace('-', '_')}"
+    return f"__{ns}__{ds}__"
+
+
 def import_fixture(
     settings: Settings,
     session_id: Any,
@@ -180,8 +200,10 @@ def import_fixture(
 
     Idempotent: if the namespace already contains the same number of nodes
     and edges for this dataset, the import is a no-op. The reserved
-    namespace label is `__sess_<digest>__` so cleanup is a single
-    `MATCH (n:`__sess_<digest>__`) DETACH DELETE n` query.
+    namespace label is the value returned by `dataset_label(session_id,
+    dataset_id)` so cleanup is a single
+    `MATCH (n) WHERE ANY(l IN labels(n) WHERE l STARTS WITH $ns_prefix)
+    DETACH DELETE n` query.
 
     Raises `ServiceUnavailableError` if Neo4j is not connected.
     """
@@ -192,8 +214,7 @@ def import_fixture(
             details={"dataset_id": dataset_id},
         )
     ns = session_namespace(session_id)
-    ds_label = f"ds_{dataset_id.replace('-', '_')}"
-    full_label = f"__{ns}__{ds_label}__"
+    full_label = dataset_label(session_id, dataset_id)
 
     try:
         with driver.session(database=settings.neo4j_database) as s:
