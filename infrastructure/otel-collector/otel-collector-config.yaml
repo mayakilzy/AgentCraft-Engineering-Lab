@@ -1,0 +1,53 @@
+# OTEL Collector config — receives OTLP (HTTP + gRPC) from the API,
+# exports traces to Tempo and metrics to Prometheus (via scrape).
+# All ports on the private network only; not exposed publicly.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
+
+processors:
+  # Batch spans before export (reduces network round-trips).
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+  # Drop high-cardinality attributes that could explode Tempo storage.
+  # Per G04 reviewer note #4: no sensitive data, no unbounded labels.
+  attributes/remove_sensitive:
+    actions:
+      - key: http.request.header.cookie
+        action: delete
+      - key: http.request.header.authorization
+        action: delete
+      - key: session_id
+        action: delete
+      - key: guest_token
+        action: delete
+
+exporters:
+  # Traces → Tempo (OTLP gRPC, Tempo 2.x supports OTLP natively).
+  otlp/tempo:
+    endpoint: "tempo:4317"
+    tls:
+      insecure: true
+  # Metrics → Prometheus exporter (the collector exposes a scrape endpoint).
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: "agentcraft"
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch, attributes/remove_sensitive]
+      exporters: [otlp/tempo]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]
+  telemetry:
+    logs:
+      level: "info"

@@ -91,3 +91,4 @@ def registered_validators() -> list[str]:
 # These imports must come AFTER the registration decorators are defined.
 from app.lab import operations as _ops  # noqa: E402,F401
 from app.lab import validators as _vals  # noqa: E402,F401
+from app.lab import observability_operations as _obs_ops  # noqa: E402,F401

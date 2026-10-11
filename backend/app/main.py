@@ -1,15 +1,16 @@
 """FastAPI application entry point.
 
-G01 wires only the `health` router and the modules registry listing. Later
-groups add `sessions`, `experiments`, `runs`, `mentor`, `graph`, and
-`observability` routers without restructuring this file.
+G01 wires the `health` router + modules registry. G02-G03 add sessions,
+graph, graph-analysis, seed, lab routers. G04 wires the observability
+surface (metrics endpoint, telemetry instrumentation, observability links).
 """
 from __future__ import annotations
 
+import time
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.deps import request_id_dep
@@ -19,6 +20,7 @@ from app.api.v1 import graph as graph_router
 from app.api.v1 import graph_analysis as graph_analysis_router
 from app.api.v1 import seed as seed_router
 from app.api.v1 import lab as lab_router
+from app.api.v1 import observability as observability_router
 from app.config import Settings, get_settings
 from app.core.errors import (
     AppError,
@@ -28,7 +30,8 @@ from app.core.errors import (
     validation_exception_handler,
 )
 from app.core.logging import configure_logging, get_logger, set_request_id
-from app.core.telemetry import instrument_app
+from app.core.metrics import record_http_request, render_metrics
+from app.core.telemetry import attach_trace_id_to_logging_context, instrument_app
 from app.schemas.common import ErrorDetail
 from app.services.modules_registry import get_registry
 
@@ -38,11 +41,11 @@ from fastapi.exceptions import RequestValidationError
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifecycle: configure logging, instrument, register manifests.
+    """Application lifecycle: configure logging, instrument OTEL, mount routers.
 
-    Manifests are validated against the schema on boot; failures are
-    fail-closed per the contract. For G01 the registry is intentionally
-    empty so the listing endpoint honestly reports zero modules.
+    G04: instrument_app() now wires the real FastAPI + SQLAlchemy
+    instrumentation and an OTLP exporter (graceful no-op when no endpoint
+    is configured). Manifests remain empty until G05.
     """
     settings = get_settings()
     configure_logging(settings.log_level)
@@ -52,9 +55,10 @@ async def lifespan(app: FastAPI):
         extra={
             "app_env": settings.app_env,
             "db_is_sqlite": settings.is_test_like,
+            "otel_endpoint": settings.otel_exporter_otlp_endpoint or "(none)",
         },
     )
-    instrument_app(app)  # no-op until G04
+    instrument_app(app)
     yield
     log.info("shutdown")
 
@@ -80,12 +84,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     @app.middleware("http")
-    async def _attach_request_id(request, call_next):
-        """Stamp every response with `x-request-id` for client correlation."""
+    async def _attach_request_id_and_metrics(request: Request, call_next):
+        """Stamp x-request-id, push trace_id into logging context, record
+        Prometheus metrics. Bounded labels: method, path_template, status."""
         rid = request.headers.get("x-request-id") or str(uuid.uuid4())
         set_request_id(rid)
-        response = await call_next(request)
+        attach_trace_id_to_logging_context()
+        t0 = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            # Record the metric even on unhandled exceptions (status=500).
+            duration = time.perf_counter() - t0
+            record_http_request(
+                request.method,
+                request.url.path,
+                500,
+                duration,
+            )
+            raise
+        duration = time.perf_counter() - t0
         response.headers["x-request-id"] = rid
+        # Use the matched route's path template (e.g. "/api/v1/graph/{id}")
+        # for bounded cardinality; fall back to the raw path if no route
+        # was matched (e.g. 404 on a typo'd URL).
+        route = request.scope.get("route")
+        path_template = getattr(route, "path", None) or request.url.path
+        record_http_request(
+            request.method,
+            path_template,
+            response.status_code,
+            duration,
+        )
         return response
 
     # Exception handlers → contract error body.
@@ -101,6 +131,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(graph_analysis_router.router, prefix="/api/v1")
     app.include_router(seed_router.router, prefix="/api/v1")
     app.include_router(lab_router.router, prefix="/api/v1")
+    app.include_router(observability_router.router, prefix="/api/v1")
+
+    # Prometheus scrape endpoint. Public (Prometheus needs to scrape it)
+    # but exposes only bounded-aggregate counters/histograms — no PII.
+    @app.get("/metrics", tags=["metrics"])
+    def metrics() -> Response:
+        return Response(
+            content=render_metrics(),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
     @app.get(
         "/api/v1/modules",

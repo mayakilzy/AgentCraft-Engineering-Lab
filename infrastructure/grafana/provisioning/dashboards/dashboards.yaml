@@ -1,0 +1,12 @@
+# Grafana dashboard provider — auto-loads dashboards from /var/lib/grafana/dashboards.
+apiVersion: 1
+
+providers:
+  - name: "agentcraft"
+    orgId: 1
+    folder: "AgentCraft"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

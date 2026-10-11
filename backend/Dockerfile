@@ -29,7 +29,15 @@ RUN pip install --no-compile --no-cache-dir \
     "alembic==1.14.1" \
     "psycopg2-binary==2.9.10" \
     "asyncpg==0.30.0" \
-    "httpx==0.28.1"
+    "httpx==0.28.1" \
+    "networkx==3.4.2" \
+    "neo4j==5.27.0" \
+    "opentelemetry-api>=1.45.0" \
+    "opentelemetry-sdk>=1.45.0" \
+    "opentelemetry-exporter-otlp>=1.45.0" \
+    "opentelemetry-instrumentation-fastapi>=0.66b0" \
+    "opentelemetry-instrumentation-sqlalchemy>=0.66b0" \
+    "prometheus_client>=0.20.0"
 
 # Non-root user.
 RUN useradd --create-home --uid 1000 ac && \

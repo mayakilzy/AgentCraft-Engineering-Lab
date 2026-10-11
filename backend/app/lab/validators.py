@@ -208,3 +208,121 @@ def validate_filter_by_kind(
         if passed
         else "filtered subset does not match expected",
     )
+
+
+# ---- E07 — Trace One Request ----
+
+@register_validator("trace_demo_v1")
+def validate_trace_demo(
+    outputs: Dict[str, Any],
+    expected: Dict[str, Any],
+) -> ValidationResult:
+    """E07 validator: the trace must contain ≥3 spans (fetch → transform →
+    persist) with status and timing. The run_id must be present in outputs.
+    """
+    spans = outputs.get("spans") or []
+    span_count = outputs.get("span_count", len(spans))
+    expected_count = expected.get("min_spans", 3)
+    passed = span_count >= expected_count
+    return ValidationResult(
+        validator_key="trace_demo_v1",
+        passed=passed,
+        expected={"min_spans": expected_count},
+        actual={"span_count": span_count, "spans": spans},
+        message=f"trace has {span_count} spans (≥{expected_count})"
+        if passed
+        else f"trace has only {span_count} spans (need ≥{expected_count})",
+    )
+
+
+# ---- E08 — Build Monitoring Dashboard ----
+
+@register_validator("metrics_demo_v1")
+def validate_metrics_demo(
+    outputs: Dict[str, Any],
+    expected: Dict[str, Any],
+) -> ValidationResult:
+    """E08 validator: nonzero request count + bounded latency + error rate.
+    The validator checks the metrics summary returned by the operation.
+    """
+    http_total = outputs.get("http_requests_total", 0)
+    p95 = outputs.get("http_request_duration_seconds_p95")
+    lab_total = outputs.get("lab_runs_total", 0)
+    min_requests = expected.get("min_http_requests", 1)
+    max_p95 = expected.get("max_p95_seconds", 10.0)
+
+    problems = []
+    if http_total < min_requests:
+        problems.append(f"http_requests_total {http_total} < {min_requests}")
+    if p95 is not None and p95 > max_p95:
+        problems.append(f"p95 latency {p95}s > {max_p95}s bound")
+    if lab_total < 1:
+        problems.append("lab_runs_total is zero")
+
+    passed = not problems
+    return ValidationResult(
+        validator_key="metrics_demo_v1",
+        passed=passed,
+        expected={
+            "min_http_requests": min_requests,
+            "max_p95_seconds": max_p95,
+        },
+        actual={
+            "http_requests_total": http_total,
+            "http_request_duration_seconds_p95": p95,
+            "lab_runs_total": lab_total,
+        },
+        message="nonzero request count + bounded latency + nonzero lab runs"
+        if passed
+        else "; ".join(problems),
+    )
+
+
+# ---- E09 — Diagnose a Hidden Failure ----
+
+@register_validator("failure_diagnosis_v1")
+def validate_failure_diagnosis(
+    outputs: Dict[str, Any],
+    expected: Dict[str, Any],
+) -> ValidationResult:
+    """E09 validator: the failed run must pinpoint the configured fail_step;
+    the corrected (re-run without injection) must pass.
+
+    Expected shape:
+        expected = {
+            "failed_run": {"fail_step": "transform"},
+            "corrected_run": {"status": "ok"},
+        }
+    """
+    failed = outputs.get("failed_run", {})
+    corrected = outputs.get("corrected_run", {})
+    expected_fail = expected.get("failed_run", {}).get("fail_step")
+    actual_fail = failed.get("fail_step")
+    corrected_status = corrected.get("status")
+
+    problems = []
+    if actual_fail != expected_fail:
+        problems.append(
+            f"failed_run.fail_step={actual_fail} != expected {expected_fail}"
+        )
+    if failed.get("status") != "failed":
+        problems.append("failed_run.status is not 'failed'")
+    if corrected_status != "ok":
+        problems.append(f"corrected_run.status={corrected_status} != 'ok'")
+
+    passed = not problems
+    return ValidationResult(
+        validator_key="failure_diagnosis_v1",
+        passed=passed,
+        expected={
+            "failed_run": {"fail_step": expected_fail, "status": "failed"},
+            "corrected_run": {"status": "ok"},
+        },
+        actual={
+            "failed_run": {"fail_step": actual_fail, "status": failed.get("status")},
+            "corrected_run": {"status": corrected_status},
+        },
+        message="diagnosis matches injected fail_step + corrected rerun passes"
+        if passed
+        else "; ".join(problems),
+    )
