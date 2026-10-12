@@ -13,21 +13,28 @@ and continues, but the operator can alert on non-zero exits.
 Usage:
     python -m app.cleanup_purge
 
-G07-C2-04 retention semantics:
+G07-C2-04 + G08-C1-06 retention semantics:
 - A guest session is EXPIRED when `expires_at <= now()`. The session
   is immediately REJECTED on any API request (401), but the row stays
   in the DB until the purge cron deletes it.
 - A session is PURGED (DB row + cascaded data deleted) only when the
   purge cron runs. Between expiry and purge, the row exists but is
   unusable.
-- G07-C2-01: the Neo4j namespace cleanup is recoverable. If Neo4j is
-  down during a purge run, a `purge_tasks` row records the pending
-  cleanup. The next purge run retries it. The session_id is NOT lost
-  (it's stored in `purge_tasks.session_id`).
-- G07-C2-04 worst-case retention: with session_ttl_hours=24 and a 6h
-  purge interval, the worst-case is 30h. To guarantee ≤24h, set the
-  purge interval to ≤1h OR set session_ttl_hours to ≤18h. The default
-  is 24h TTL + 6h purge = 30h — documented honestly.
+- Session expiry (TTL) and data retention are DIFFERENT concepts:
+  * TTL = how long a session is USABLE (default 24h).
+  * Data retention = how long the data STAYS in the DB after expiry.
+  The worst-case data retention = TTL + purge_interval.
+  Default: 24h TTL + 6h purge = 30h worst-case data retention.
+- To ACHIEVE a target data retention R:
+  * Set TTL + purge_interval ≤ R.
+  * Example: for R=24h, use TTL=23h + purge_interval=1h = 24h.
+  * Or: TTL=18h + purge_interval=6h = 24h.
+  The previous claim that "purge interval ≤1h guarantees ≤24h" was
+  INCORRECT — TTL=24h + purge_interval=1h = 25h worst-case.
+- NO guarantee holds during DB outages: the purge can't run if the
+  database is down. The worst-case retention extends by the outage
+  duration. This is documented honestly — we don't claim a guarantee
+  we can't enforce.
 
 Exit codes:
 - 0: success (all pending tasks resolved, no failures)

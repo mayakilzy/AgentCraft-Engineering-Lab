@@ -109,12 +109,18 @@ def purge_expired_sessions(db: Session) -> dict:
     and `neo4j_service.dataset_label`. This guarantees the retry cleans
     up the correct nodes (not a different session's namespace).
 
-    G08 قبول-2 retention: with session_ttl_hours=24 and a 6h purge
-    interval, the worst-case is 30h. This is NOT a ≤24h guarantee —
-    the default is documented as 30h worst-case. To guarantee ≤24h,
-    set the purge interval to ≤1h OR session_ttl_hours to ≤18h.
-    The guarantee does NOT hold during DB outages (the purge can't
-    run if the DB is down).
+    G08 قبول-2 + C1-06 retention: with session_ttl_hours=24 and a 6h
+    purge interval, the worst-case DATA RETENTION is 30h (TTL +
+    purge_interval). This is NOT a ≤24h guarantee. To achieve a target
+    data retention R, set TTL + purge_interval ≤ R. The previous claim
+    that "purge interval ≤1h guarantees ≤24h" was incorrect —
+    TTL=24h + purge_interval=1h = 25h. The guarantee does NOT hold
+    during DB outages (the purge can't run if the DB is down).
+
+    Session expiry (TTL) and data retention are DIFFERENT concepts:
+    - TTL = how long a session is USABLE (default 24h).
+    - Data retention = how long data STAYS in the DB after expiry
+      (worst-case = TTL + purge_interval).
 
     Returns a dict with:
     - deleted_sessions: count of PostgreSQL rows deleted
