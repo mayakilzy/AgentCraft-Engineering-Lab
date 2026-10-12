@@ -307,7 +307,7 @@ echo ""
 echo "--- Purge Cron ---"
 
 echo "CHECK: purge_expired_sessions runs without error"
-if python -m app.cleanup_purge 2>/dev/null; then
+if python -m app.cleanup_purge; then
     pass
 else
     fail "cleanup_purge failed"
