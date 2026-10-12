@@ -59,7 +59,7 @@ jobs:
         run: |
           docker compose --profile observability up -d --build
           echo "Waiting for Grafana..."
-          timeout 90 bash -c 'until docker compose ps grafana | grep -i healthy; do sleep 2; done'
+          timeout 120 bash -c 'until docker compose ps grafana | grep -i healthy; do sleep 2; done'
 
       - name: Build and start Neo4j stack
         run: |
