@@ -261,6 +261,29 @@ services:
           memory: 256M
     networks: [agentcraft-net]
 
+  # ---- G08-C2-1: test runner (separate lightweight image) ----
+  # Runs the integration smoke script against the REAL services on
+  # the private network. The production image stays clean (no pytest).
+  # This service is started by the CI workflow via:
+  #   docker compose run --rm --no-deps test-runner
+  test-runner:
+    build:
+      context: .
+      dockerfile: tests/Dockerfile.test
+    profiles: [test]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-changeme}
+      GRAFANA_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme}
+    # No ports — connects to the private network only.
+    # No depends_on — the CI workflow starts services first, then
+    # runs the test-runner manually.
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks: [agentcraft-net]
+
 volumes:
   pgdata:
   neo4jdata:

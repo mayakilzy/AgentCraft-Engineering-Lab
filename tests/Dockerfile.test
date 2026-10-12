@@ -1,0 +1,67 @@
+# AgentCraft Engineering Lab — Test runner image.
+#
+# G08-C2-1: a SEPARATE, lightweight image for running integration
+# tests. This keeps the production image (backend/Dockerfile) clean
+# (no pytest, no test scripts). The test image is built from the same
+# base but adds test dependencies + the integration smoke script.
+#
+# This image is used by the `test-runner` service in docker-compose.yml
+# (profile: core). It connects to the agentcraft-net network and tests
+# the REAL services (PostgreSQL, Neo4j, Prometheus, Tempo, Grafana,
+# Nginx) via internal service names.
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# System deps: libpq5 for psycopg2, curl + wget for health checks,
+# jq for JSON parsing in the smoke script.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq5 curl wget jq \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install the same runtime deps as the production image + test deps.
+COPY backend/pyproject.toml backend/alembic.ini ./backend/
+COPY backend/alembic ./backend/alembic
+COPY backend/app ./backend/app
+COPY tests/integration/smoke.sh ./tests/integration/smoke.sh
+
+RUN pip install --no-compile --no-cache-dir \
+    "fastapi==0.128.0" \
+    "uvicorn[standard]>=0.30.0" \
+    "pydantic>=2.9.0" \
+    "pydantic-settings==2.7.1" \
+    "SQLAlchemy==2.0.36" \
+    "alembic==1.14.1" \
+    "psycopg2-binary==2.9.10" \
+    "asyncpg==0.30.0" \
+    "httpx==0.28.1" \
+    "networkx==3.4.2" \
+    "neo4j==5.27.0" \
+    "pyyaml" \
+    "prometheus_client>=0.20.0" \
+    "opentelemetry-api>=1.45.0" \
+    "opentelemetry-sdk>=1.45.0" \
+    "opentelemetry-exporter-otlp>=1.45.0" \
+    "opentelemetry-instrumentation-fastapi>=0.66b0" \
+    "opentelemetry-instrumentation-sqlalchemy>=0.66b0" \
+    "pytest==8.3.4" \
+    "pytest-asyncio==0.25.3"
+
+# Non-root user (same uid as production for consistency).
+RUN useradd --create-home --uid 1000 ac && \
+    chown -R ac:ac /app
+USER ac
+
+ENV PYTHONPATH=/app/backend
+
+# The entrypoint runs the smoke script. The GitHub Actions workflow
+# calls this via `docker compose run --rm test-runner`.
+RUN chmod +x /app/tests/integration/smoke.sh
+
+CMD ["bash", "/app/tests/integration/smoke.sh"]
