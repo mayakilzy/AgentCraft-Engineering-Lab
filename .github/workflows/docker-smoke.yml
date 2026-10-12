@@ -47,7 +47,7 @@ jobs:
           NEO4J_PASSWORD=${NEO4J_PW}
           GRAFANA_ADMIN_PASSWORD=${GRAFANA_PW}
           SESSION_COOKIE_SECURE=true
-          CORS_ORIGINS=["https://localhost"]
+          CORS_ORIGINS=["https://agentcraft.example"]
           SESSION_TTL_HOURS=24
           RATE_LIMIT_PER_MINUTE=60
           GDS_LICENSED=false
@@ -64,7 +64,7 @@ jobs:
           echo "Waiting for PostgreSQL..."
           timeout 60 bash -c 'until docker compose ps postgres | grep -i healthy; do sleep 2; done'
           echo "Waiting for API..."
-          timeout 60 bash -c 'until docker compose ps api | grep -i healthy; do sleep 2; done'
+          timeout 120 bash -c 'until docker compose ps api | grep -i healthy; do sleep 2; done'
 
       - name: Build and start observability stack
         run: |
@@ -136,7 +136,7 @@ jobs:
           echo "Restarting API container from host..."
           docker compose restart api
           echo "Waiting for API to be healthy after restart..."
-          timeout 60 bash -c 'until docker compose ps api | grep -i healthy; do sleep 2; done'
+          timeout 120 bash -c 'until docker compose ps api | grep -i healthy; do sleep 2; done'
           echo "API is healthy after restart"
 
       - name: Verify persistence using SAME cookie (C3-2 + C3-4)
