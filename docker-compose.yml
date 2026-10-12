@@ -286,7 +286,11 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: ${NEO4J_USER:-neo4j}
       NEO4J_DATABASE: ${NEO4J_DATABASE:-neo4j}
-      APP_ENV: ${APP_ENV:-local}
+      # C3 fix: the test-runner runs in LOCAL mode (not production).
+      # The production fail-closed validator is tested via the API
+      # container (which runs with APP_ENV=production). The test-runner
+      # just needs to connect to PostgreSQL + run cleanup_purge.
+      APP_ENV: local
     # No ports — connects to the private network only.
     deploy:
       resources:
