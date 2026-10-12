@@ -67,7 +67,16 @@ def create_run(
 
     Per ADR-0003 step 1: the run record's trace_id is captured from the
     active OTEL span and stored on the runs table.
+
+    G07/T26: the runs endpoint is rate-limited per session
+    (RATE_LIMIT_PER_MINUTE=60 by default). This prevents a single
+    guest session from overwhelming the lab with run requests.
     """
+    # G07/T26: rate limit per session.
+    from app.core.rate_limit import get_rate_limiter
+    limiter = get_rate_limiter(settings)
+    limiter.acquire(session.id)
+
     outcome = run_service.create_and_execute_run(
         db, settings, session, experiment_id, payload.mode, payload.inputs,
     )
