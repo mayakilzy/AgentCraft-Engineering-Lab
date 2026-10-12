@@ -95,7 +95,7 @@ services:
     profiles: [neo4j]
     environment:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-changeme}
-      NEO4J_PLUGINS: '["gds"]'  # GDS plugin installed but license-gated
+      NEO4J_PLUGINS: '["graph-data-science"]'  # GDS plugin (correct name)
       NEO4J_dbms_security_auth__enabled: "true"
     volumes:
       - neo4jdata:/data
