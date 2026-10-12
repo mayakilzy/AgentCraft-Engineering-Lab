@@ -19,6 +19,7 @@ WORKDIR /app
 COPY backend/pyproject.toml backend/alembic.ini ./backend/
 COPY backend/alembic ./backend/alembic
 COPY backend/app ./backend/app
+COPY lab-modules ./lab-modules
 
 RUN pip install --no-compile --no-cache-dir \
     "fastapi==0.128.0" \

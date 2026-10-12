@@ -29,6 +29,7 @@ WORKDIR /app
 COPY backend/pyproject.toml backend/alembic.ini ./backend/
 COPY backend/alembic ./backend/alembic
 COPY backend/app ./backend/app
+COPY lab-modules ./lab-modules
 COPY tests/integration/smoke.sh ./tests/integration/smoke.sh
 
 RUN pip install --no-compile --no-cache-dir \
