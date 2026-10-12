@@ -43,26 +43,45 @@ from app.services.session_service import purge_expired_sessions
 
 
 def main() -> int:
-    """Purge expired guest sessions. Returns 0/1/2 per the exit code contract."""
+    """Purge expired guest sessions. Returns 0/1/2 per the exit code contract.
+
+    G08 قبول-1: exit 2 is returned when there are UNRESOLVED failed tasks
+    (from this run or previous runs). This ensures failed tasks stay
+    visible to monitoring — a subsequent run cannot return exit 0 while
+    failed tasks remain in the table.
+    """
     db = SessionLocal()
     try:
         result = purge_expired_sessions(db)
         deleted = result["deleted_sessions"]
         neo4j_deleted = result["neo4j_nodes_deleted"]
-        failures = result["neo4j_cleanup_failures"]
+        failures_this_run = result["neo4j_cleanup_failures"]
         pending = result["pending_tasks_remaining"]
+        failed = result["failed_tasks_remaining"]
 
         print(
             f"purged {deleted} expired sessions; "
             f"neo4j nodes deleted: {neo4j_deleted}; "
-            f"failures: {failures}; "
+            f"failures this run: {failures_this_run}; "
             f"pending tasks remaining: {pending}; "
+            f"failed tasks remaining: {failed}; "
             f"at {result['purged_at']}"
         )
 
-        # G07-C2-02: honest exit status.
-        if failures > 0:
-            # Some tasks failed after max attempts — operator intervention.
+        # G08 قبول-1: if there are failed tasks (from this run OR
+        # previous runs), the exit status is 2 (partial). This makes
+        # failed tasks visible to monitoring — the operator must
+        # resolve them (or delete the purge_tasks row) before the
+        # cron can return exit 0 again.
+        if failed > 0:
+            print(
+                f"WARNING: {failed} failed purge tasks remain in the "
+                f"purge_tasks table. Operator intervention required.",
+                file=sys.stderr,
+            )
+            return 2
+        if failures_this_run > 0:
+            # Tasks that just transitioned to failed this run.
             return 2
         if pending > 0:
             # Some tasks are pending retry — partial success.

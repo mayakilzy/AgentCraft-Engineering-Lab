@@ -6,7 +6,15 @@ examples, verify results, record runs, and ask a context-aware textual tutor
 to diagnose failures.
 
 > **Status:** V1.0 scope FROZEN. Sequential group delivery (G01 → G08).
-> Current group: **G01 — Foundation and skeleton**.
+> Current group: **G08 — Acceptance and release qualification**.
+>
+> **Known limitation:** Docker runtime verification is BLOCKED in the
+> development environment (Docker daemon unavailable). All in-process
+> code paths are tested (SQLite, FakeDriver, in-process OTEL). The
+> Compose runtime smoke (PostgreSQL, Neo4j/GDS, OTEL Collector,
+> Prometheus, Tempo, Grafana, Nginx) must be run in a CI environment
+> with Docker before the release gate can open. **This project is NOT
+> production-ready until the Docker runtime PASS is verified.**
 
 ---
 

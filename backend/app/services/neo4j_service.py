@@ -283,6 +283,11 @@ def import_fixture(
 def cleanup_session(settings: Settings, session_id: Any) -> int:
     """Drop all nodes in the session namespace. Returns the count deleted.
     Called by the run reset / session expiry paths in later groups.
+
+    G08 قبول-3: the ns_prefix used here MUST match the prefix stored
+    in `purge_tasks.neo4j_namespace` (used by the purge retry). Both
+    use `session_namespace(session_id)` as the base, so they're
+    guaranteed to match.
     """
     driver = get_driver(settings)
     if driver is None:
@@ -298,7 +303,13 @@ def cleanup_session(settings: Settings, session_id: Any) -> int:
         "MATCH (n) WHERE ANY(l IN labels(n) WHERE l STARTS WITH $ns_prefix) "
         "DETACH DELETE n"
     )
+    # The prefix is `__<namespace>__` which matches ALL dataset labels
+    # for this session (e.g., __sess_abc123def456__ds_e01__).
+    ns_prefix = f"__{ns}__"
     with driver.session(database=settings.neo4j_database) as s:
-        result = s.run(cypher, ns_prefix=f"__{ns}__")
+        result = s.run(cypher, ns_prefix=ns_prefix)
         summary = result.consume()
-        return int(getattr(summary, "counters", {}).get("nodes_deleted", 0))  # type: ignore[union-attr]
+        counters = getattr(summary, "counters", None)
+        if counters is not None:
+            return int(getattr(counters, "nodes_deleted", 0))
+        return 0

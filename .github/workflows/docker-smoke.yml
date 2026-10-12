@@ -1,0 +1,125 @@
+# AgentCraft Engineering Lab — Docker Compose runtime smoke.
+#
+# G08 قبول-5: this CI workflow runs the FULL Docker Compose stack
+# (PostgreSQL, Neo4j, OTEL Collector, Prometheus, Tempo, Grafana,
+# Nginx) and verifies the runtime smoke. It MUST run in a CI
+# environment with Docker available.
+#
+# This workflow is NOT run in the dev env (Docker unavailable). It
+# is the gate that, when PASS, opens the release gate for V1.0.
+#
+# Prerequisites:
+# - Docker daemon available
+# - .env file with production-grade passwords (not 'changeme')
+#
+# The workflow:
+# 1. Builds all images
+# 2. Starts the core profile (PostgreSQL + API + Nginx + purge-cron)
+# 3. Starts the observability profile (Collector + Prometheus + Tempo + Grafana)
+# 4. Starts the Neo4j profile
+# 5. Waits for health checks
+# 6. Runs the backend test suite against the running stack
+# 7. Verifies data persistence (restart the API, check data survives)
+# 8. Tears down
+
+name: Docker Compose Runtime Smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  docker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create .env with production-grade passwords
+        run: |
+          cat > .env << 'EOF'
+          APP_ENV=production
+          POSTGRES_PASSWORD=ci-strong-pg-password-12345
+          NEO4J_PASSWORD=ci-strong-neo4j-password-12345
+          GRAFANA_ADMIN_PASSWORD=ci-strong-grafana-password-12345
+          SESSION_COOKIE_SECURE=true
+          CORS_ORIGINS=["https://localhost"]
+          SESSION_TTL_HOURS=24
+          RATE_LIMIT_PER_MINUTE=60
+          GDS_LICENSED=false
+          EOF
+
+      - name: Build and start core stack
+        run: |
+          docker compose --profile core up -d --build
+          # Wait for PostgreSQL to be healthy.
+          timeout 60 bash -c 'until docker compose ps postgres | grep healthy; do sleep 2; done'
+          # Wait for API to be healthy.
+          timeout 60 bash -c 'until docker compose ps api | grep healthy; do sleep 2; done'
+
+      - name: Build and start observability stack
+        run: |
+          docker compose --profile observability up -d --build
+          # Wait for Grafana to be healthy.
+          timeout 90 bash -c 'until docker compose ps grafana | grep healthy; do sleep 2; done'
+
+      - name: Build and start Neo4j stack
+        run: |
+          docker compose --profile neo4j up -d --build
+          # Wait for Neo4j to be healthy.
+          timeout 120 bash -c 'until docker compose ps neo4j | grep healthy; do sleep 2; done'
+
+      - name: Run backend tests against the running stack
+        run: |
+          # Run the test suite against PostgreSQL (not SQLite).
+          cd backend
+          DATABASE_URL=postgresql+psycopg2://agentcraft:ci-strong-pg-password-12345@localhost:5432/agentcraft \
+          NEO4J_URI=bolt://localhost:7687 \
+          NEO4J_PASSWORD=ci-strong-neo4j-password-12345 \
+          python -m pytest app/tests/ -v
+
+      - name: Verify data persistence (restart API)
+        run: |
+          # Create a guest session.
+          curl -s -X POST http://localhost:8000/api/v1/sessions/guest \
+            -H 'Content-Type: application/json' \
+            -d '{"locale":"en"}' -c /tmp/cookies.txt
+
+          # Restart the API container.
+          docker compose restart api
+          timeout 60 bash -c 'until docker compose ps api | grep healthy; do sleep 2; done'
+
+          # Verify the session still works (data persisted in PostgreSQL).
+          curl -s http://localhost:8000/api/v1/sessions/me -b /tmp/cookies.txt | grep -q "session_id"
+
+      - name: Verify /metrics is blocked via Nginx
+        run: |
+          # /metrics should return 403 via Nginx (port 8080).
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/metrics)
+          if [ "$code" != "403" ]; then
+            echo "FAIL: /metrics returned $code (expected 403)"
+            exit 1
+          fi
+          echo "PASS: /metrics blocked via Nginx (403)"
+
+      - name: Verify purge-cron is running
+        run: |
+          # The purge-cron service should be running.
+          docker compose ps purge-cron | grep -q "Up"
+
+      - name: Tear down
+        if: always
+        run: |
+          docker compose --profile core --profile observability --profile neo4j down -v
+
+      - name: Upload logs on failure
+        if: failure()
+        run: |
+          docker compose logs > /tmp/compose-logs.txt
+          cat /tmp/compose-logs.txt

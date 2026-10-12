@@ -62,7 +62,10 @@ def test_purge_retry_recovers_after_neo4j_recovery(db, settings):
     sess.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
     db.commit()
     session_id = sess.id
-    namespace = f"__{sess.id.hex[:24]}__"
+    # G08 قبول-3: use the SAME namespace function as the production code.
+    from app.services.neo4j_service import session_namespace
+    ns = session_namespace(sess.id)
+    namespace = f"__{ns}__"
 
     # Round 1: Neo4j is DOWN. Inject a failing driver.
     class FailingDriver:

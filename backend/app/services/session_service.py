@@ -98,34 +98,34 @@ def purge_expired_sessions(db: Session) -> dict:
 
     Per ADR-0003 Part B #10 + G07-C2-01: recoverable Neo4j cleanup.
 
-    G07-C2-01 design (cleanup-before-delete with persistent retry):
-    1. Find expired sessions.
-    2. For each expired session, create a `purge_tasks` row (status=
-       pending) with the session_id + Neo4j namespace BEFORE deleting
-       the PostgreSQL row. This ensures no session_id is lost even if
-       the Neo4j cleanup fails.
-    3. Attempt the Neo4j cleanup. If it succeeds, mark the task `done`.
-       If it fails, the task stays `pending` and is retried on the next
-       purge run (by `retry_pending_purge_tasks`).
-    4. Delete the PostgreSQL row (CASCADE removes runs, run_events,
-       graph_nodes, graph_edges). This happens AFTER the purge_tasks
-       row is created, so the session_id is preserved for retry.
-    5. After processing expired sessions, retry any pending tasks from
-       previous runs (Neo4j may have recovered).
+    G08 قبول-1: failed tasks (status='failed') stay in the purge_tasks
+    table and are reported in the result. The cleanup_purge command
+    returns exit 2 when failed tasks remain — they don't become
+    invisible. A subsequent run cannot return exit 0 while failed tasks
+    exist.
 
-    G07-C2-04 retention guarantee: with session_ttl_hours=24 and a 6h
-    purge interval, the worst-case retention is 24h (expiry) + 6h
-    (next purge) = 30h. To guarantee ≤24h, set the purge interval to
-    ≤1h OR set session_ttl_hours to ≤18h. The default is 24h TTL + 6h
-    purge = 30h worst-case — documented honestly. The operator can
-    tighten the interval for stricter retention.
+    G08 قبول-3: the namespace stored in purge_tasks uses the SAME
+    `session_namespace()` function as `neo4j_service.cleanup_session`
+    and `neo4j_service.dataset_label`. This guarantees the retry cleans
+    up the correct nodes (not a different session's namespace).
+
+    G08 قبول-2 retention: with session_ttl_hours=24 and a 6h purge
+    interval, the worst-case is 30h. This is NOT a ≤24h guarantee —
+    the default is documented as 30h worst-case. To guarantee ≤24h,
+    set the purge interval to ≤1h OR session_ttl_hours to ≤18h.
+    The guarantee does NOT hold during DB outages (the purge can't
+    run if the DB is down).
 
     Returns a dict with:
     - deleted_sessions: count of PostgreSQL rows deleted
     - neo4j_nodes_deleted: count of Neo4j nodes deleted this run
-    - neo4j_cleanup_failures: count of tasks that failed this run
-    - pending_tasks_remaining: count of tasks still pending (across
-      all runs, including retries from previous runs)
+    - neo4j_cleanup_failures: count of tasks that transitioned to
+      'failed' this run
+    - pending_tasks_remaining: count of tasks still pending (will be
+      retried next run)
+    - failed_tasks_remaining: count of failed tasks in the table
+      (including from previous runs — G08 قبول-1)
+    - failed_task_ids: list of failed task IDs (for monitoring)
     - purged_at: ISO timestamp
     """
     from app.models.purge_task import PurgeTask, MAX_PURGE_ATTEMPTS
@@ -139,10 +139,18 @@ def purge_expired_sessions(db: Session) -> dict:
     # G07-C2-01: create purge_tasks rows BEFORE deleting PostgreSQL.
     # This ensures the session_id + Neo4j namespace are preserved for
     # retry even if the Neo4j cleanup fails.
+    #
+    # G08 قبول-3: the namespace stored here MUST match the prefix used
+    # by `neo4j_service.cleanup_session` and the labels created by
+    # `neo4j_service.dataset_label`. Both use `session_namespace(session_id)`
+    # as the base, so we use the same function here.
+    from app.services.neo4j_service import session_namespace
     tasks_created = 0
     for gs in expired:
-        # Compute the Neo4j namespace for this session.
-        namespace = f"__{gs.id.hex[:24]}__"
+        # G08 قبول-3: use the SAME namespace function as neo4j_service
+        # so the retry cleans up the correct nodes.
+        ns = session_namespace(gs.id)
+        namespace = f"__{ns}__"  # matches the prefix in cleanup_session
         task = PurgeTask(
             session_id=gs.id,
             neo4j_namespace=namespace,
@@ -164,62 +172,25 @@ def purge_expired_sessions(db: Session) -> dict:
         )
         db.commit()
 
-    # G07-C2-01: retry ALL pending purge tasks (new + from previous runs).
-    # This is the recovery mechanism — if Neo4j was down in a previous
-    # run, the pending tasks are retried now.
-    retry_result = _retry_pending_purge_tasks(db)
-
-    log.info(
-        "purged expired sessions",
-        extra={
-            "deleted_sessions": len(expired),
-            "tasks_created": tasks_created,
-            "neo4j_nodes_deleted": retry_result["neo4j_nodes_deleted"],
-            "neo4j_cleanup_failures": retry_result["failures"],
-            "pending_tasks_remaining": retry_result["pending_remaining"],
-        },
-    )
-    return {
-        "deleted_sessions": len(expired),
-        "neo4j_nodes_deleted": retry_result["neo4j_nodes_deleted"],
-        "neo4j_cleanup_failures": retry_result["failures"],
-        "pending_tasks_remaining": retry_result["pending_remaining"],
-        "purged_at": now.isoformat(),
-    }
-
-
-def _retry_pending_purge_tasks(db: Session) -> dict:
-    """Retry all pending purge_tasks (Neo4j cleanup).
-
-    G07-C2-01: this is the recovery mechanism. Called by
-    `purge_expired_sessions` after creating new tasks + deleting the
-    PostgreSQL rows. It processes ALL pending tasks (new + from previous
-    runs), so a transient Neo4j outage is recovered automatically.
-
-    For each pending task:
-    1. Attempt the Neo4j cleanup using the stored `neo4j_namespace`.
-    2. If it succeeds, mark the task `done` and delete it (audit not
-       required for V1; the task row is the audit).
-    3. If it fails, increment `attempts` + record `last_error`. If
-       attempts >= MAX_PURGE_ATTEMPTS, mark the task `failed` (operator
-       intervention needed).
-    4. When Neo4j is not configured, the task is marked `done` (no-op;
-       the namespace was never created).
-
-    Returns:
-    - neo4j_nodes_deleted: total nodes deleted this run
-    - failures: count of tasks that failed this run
-    - pending_remaining: count of tasks still pending (will be retried
-      next run)
-    """
-    from app.models.purge_task import PurgeTask, MAX_PURGE_ATTEMPTS
-
+    # G08 قبول-1: query BOTH pending AND failed tasks. Failed tasks
+    # stay visible in the result so the operator can monitor them.
+    # Failed tasks are NOT retried automatically (they've exhausted
+    # MAX_PURGE_ATTEMPTS), but they remain in the purge_tasks table
+    # until the operator resolves them (or deletes the row).
     pending = db.execute(
         select(PurgeTask).where(PurgeTask.status == "pending")
     ).scalars().all()
 
     neo4j_deleted = 0
-    failures = 0
+    failures_this_run = 0
+
+    # G08 قبول-1: count existing failed tasks (from previous runs).
+    # These are NOT retried, but they must be reported so the operator
+    # sees them. The cleanup_purge command returns exit 2 when there
+    # are unresolved failed tasks.
+    existing_failed = db.execute(
+        select(PurgeTask).where(PurgeTask.status == "failed")
+    ).scalars().all()
 
     # Check if Neo4j is configured.
     from app.config import get_settings
@@ -275,18 +246,40 @@ def _retry_pending_purge_tasks(db: Session) -> dict:
             )
             if task.attempts >= MAX_PURGE_ATTEMPTS:
                 task.status = "failed"
-                failures += 1
+                failures_this_run += 1
             # else: stays pending, retried next run.
 
     db.commit()
 
-    # Count remaining pending tasks.
-    remaining = db.execute(
+    # G08 قبول-1: count remaining pending + failed tasks.
+    remaining_pending = db.execute(
         select(PurgeTask).where(PurgeTask.status == "pending")
     ).scalars().all()
+    remaining_failed = db.execute(
+        select(PurgeTask).where(PurgeTask.status == "failed")
+    ).scalars().all()
 
+    log.info(
+        "purged expired sessions",
+        extra={
+            "deleted_sessions": len(expired),
+            "tasks_created": tasks_created,
+            "neo4j_nodes_deleted": neo4j_deleted,
+            "failures_this_run": failures_this_run,
+            "pending_remaining": len(remaining_pending),
+            "failed_remaining": len(remaining_failed),
+        },
+    )
     return {
+        "deleted_sessions": len(expired),
         "neo4j_nodes_deleted": neo4j_deleted,
-        "failures": failures,
-        "pending_remaining": len(remaining),
+        # G08 قبول-1: failures_this_run is the count of tasks that
+        # transitioned to 'failed' THIS run. failed_remaining is the
+        # total count of failed tasks still in the table (including
+        # from previous runs).
+        "neo4j_cleanup_failures": failures_this_run,
+        "pending_tasks_remaining": len(remaining_pending),
+        "failed_tasks_remaining": len(remaining_failed),
+        "failed_task_ids": [str(t.id) for t in remaining_failed],
+        "purged_at": now.isoformat(),
     }
