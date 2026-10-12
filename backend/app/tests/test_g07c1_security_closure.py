@@ -294,8 +294,10 @@ def test_purge_cron_has_resource_limit():
 
 
 def test_purge_reports_neo4j_cleanup_failures(db, settings):
-    """C1-04: purge_expired_sessions reports Neo4j cleanup failures
-    honestly — doesn't claim success when data remains."""
+    """C1-04 + C2-01: purge_expired_sessions reports Neo4j cleanup
+    failures honestly. When Neo4j cleanup fails, the task stays pending
+    and is reported in `pending_tasks_remaining`. The session_id is
+    NOT lost (it's in `purge_tasks.session_id`)."""
     from app.services import session_service
     from app.models.guest_session import GuestSession
     from datetime import datetime, timedelta, timezone
@@ -306,7 +308,6 @@ def test_purge_reports_neo4j_cleanup_failures(db, settings):
     db.commit()
 
     # Mock the neo4j_service to simulate a cleanup failure.
-    # We inject a fake driver that raises on cleanup.
     from app.services import neo4j_service
 
     class FailingDriver:
@@ -323,16 +324,28 @@ def test_purge_reports_neo4j_cleanup_failures(db, settings):
     original_driver = neo4j_service._driver
     neo4j_service._driver = FailingDriver()
     try:
-        # We need NEO4J_URI set so get_driver returns our injected driver.
         original_uri = settings.neo4j_uri
         settings.neo4j_uri = "bolt://fake:7687"
         try:
             result = session_service.purge_expired_sessions(db)
             # The DB row is deleted.
             assert result["deleted_sessions"] >= 1
-            # The Neo4j cleanup failed — the failure is reported.
-            assert len(result["neo4j_cleanup_failures"]) >= 1
+            # G07-C2-01: the Neo4j cleanup failed → the task is pending
+            # (not done). It's reported in pending_tasks_remaining.
+            assert result["pending_tasks_remaining"] >= 1
             assert result["neo4j_nodes_deleted"] == 0  # nothing deleted
+
+            # G07-C2-01: the purge_tasks table has a pending task with
+            # the session_id preserved.
+            from app.models.purge_task import PurgeTask
+            from sqlalchemy import select
+            pending_tasks = db.execute(
+                select(PurgeTask).where(PurgeTask.status == "pending")
+            ).scalars().all()
+            assert len(pending_tasks) >= 1
+            assert pending_tasks[0].session_id == sess.id
+            assert pending_tasks[0].attempts >= 1
+            assert pending_tasks[0].last_error is not None
         finally:
             settings.neo4j_uri = original_uri
     finally:
@@ -341,7 +354,7 @@ def test_purge_reports_neo4j_cleanup_failures(db, settings):
 
 def test_purge_reports_no_failures_when_neo4j_not_configured(db, settings):
     """C1-04: when Neo4j is not configured, purge reports 0 failures
-    (not a failure — honest no-op)."""
+    (not a failure — honest no-op). The task is marked done."""
     from app.services import session_service, neo4j_service
     from app.models.guest_session import GuestSession
     from datetime import datetime, timedelta, timezone
@@ -359,7 +372,9 @@ def test_purge_reports_no_failures_when_neo4j_not_configured(db, settings):
         result = session_service.purge_expired_sessions(db)
         assert result["deleted_sessions"] >= 1
         assert result["neo4j_nodes_deleted"] == 0  # no-op
-        assert result["neo4j_cleanup_failures"] == []  # NOT a failure
+        # G07-C2-01: no failures (Neo4j not configured → task done).
+        assert result["neo4j_cleanup_failures"] == 0
+        assert result["pending_tasks_remaining"] == 0  # all done
     finally:
         settings.neo4j_uri = original_uri
         neo4j_service.reset_driver_for_tests()
@@ -367,7 +382,7 @@ def test_purge_reports_no_failures_when_neo4j_not_configured(db, settings):
 
 def test_cleanup_purge_command_returns_audit_info(db, settings):
     """C1-04: the cleanup_purge command returns audit info (deleted
-    count, neo4j count, failures list, timestamp)."""
+    count, neo4j count, failures, pending, timestamp)."""
     from app.services import session_service
 
     # No expired sessions → empty result.
@@ -375,8 +390,9 @@ def test_cleanup_purge_command_returns_audit_info(db, settings):
     assert "deleted_sessions" in result
     assert "neo4j_nodes_deleted" in result
     assert "neo4j_cleanup_failures" in result
+    assert "pending_tasks_remaining" in result  # G07-C2-01
     assert "purged_at" in result
-    assert isinstance(result["neo4j_cleanup_failures"], list)
+    assert isinstance(result["neo4j_cleanup_failures"], int)  # count, not list
 
 
 def test_retention_semantics_documented():

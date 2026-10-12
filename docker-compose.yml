@@ -42,16 +42,31 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      # G07-C2-03: all production settings are passed through from
+      # the host environment (or .env file). The defaults are for
+      # local dev only. When APP_ENV=production, the backend's
+      # fail-closed validator (G07-C1-01) rejects insecure defaults.
       APP_ENV: ${APP_ENV:-local}
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-agentcraft}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-agentcraft}
-      MENTOR_PROVIDER: disabled
-      CORS_ORIGINS: '["http://localhost:8080","http://localhost:5173"]'
+      MENTOR_PROVIDER: ${MENTOR_PROVIDER:-disabled}
+      # G07-C2-03: CORS_ORIGINS is passed through from .env. The
+      # default is localhost for dev; production MUST override to the
+      # real origin (the fail-closed validator rejects localhost in
+      # production).
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:8080","http://localhost:5173"]}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
       NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
       NEO4J_USER: ${NEO4J_USER:-neo4j}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-changeme}
       NEO4J_DATABASE: ${NEO4J_DATABASE:-neo4j}
       GDS_LICENSED: ${GDS_LICENSED:-false}
+      # G07-C2-03: production secrets passed through. The backend's
+      # fail-closed validator checks these when APP_ENV=production.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      GRAFANA_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
       OTEL_SERVICE_NAME: agentcraft-api
       PROMETHEUS_URL: http://prometheus:9090
@@ -116,14 +131,16 @@ services:
           memory: 128M
     networks: [agentcraft-net]
 
-  # ---- G07-C1-04: scheduled purge cron ----
-  # Runs `python -m app.cleanup_purge` every 6 hours. The interval is
-  # set by the container's entrypoint (sleep 6h between runs). A real
-  # cron daemon (e.g., supervisord) is overkill for V1; the sleep loop
-  # is simple and survives container restarts because the state is in
-  # PostgreSQL, not in the container.
-  # Retention: worst-case = 6h (purge interval) + 24h (session TTL) = 30h.
-  # Tighten to sleep 3600 (1h) for stricter retention.
+  # ---- G07-C1-04 + G07-C2-02: scheduled purge cron ----
+  # Runs `python -m app.cleanup_purge` every 6 hours. The exit status is
+  # logged (NOT swallowed with `|| true`). Exit codes:
+  #   0: success (all pending tasks resolved)
+  #   1: error (DB error or unexpected exception)
+  #   2: partial (some tasks pending retry or failed — alert worthy)
+  # The sleep loop continues regardless, but the operator can alert on
+  # non-zero exits via Docker logs.
+  # G07-C2-04 retention: worst-case = 6h (purge interval) + 24h (TTL) = 30h.
+  # To guarantee ≤24h, set sleep to 3600 (1h) OR session_ttl_hours to 18.
   purge-cron:
     build:
       context: .
@@ -139,14 +156,20 @@ services:
       NEO4J_USER: ${NEO4J_USER:-neo4j}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-changeme}
       NEO4J_DATABASE: ${NEO4J_DATABASE:-neo4j}
-    # The entrypoint runs the purge once, then sleeps 6h, then repeats.
-    # On container restart, the loop resumes (state is in PostgreSQL).
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
+    # G07-C2-02: the entrypoint logs the exit status without swallowing it.
+    # The sleep loop continues regardless, but non-zero exits are visible.
     entrypoint: ["sh", "-c"]
     command:
       - |
         while true; do
-          python -m app.cleanup_purge || true
-          echo "purge complete; sleeping 6h"
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] running purge..."
+          python -m app.cleanup_purge
+          rc=$?
+          if [ $$rc -ne 0 ]; then
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] purge exited with code $$rc (non-zero — check logs)"
+          fi
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] purge complete; sleeping 6h"
           sleep 21600
         done
     deploy:
