@@ -1,20 +1,12 @@
 # AgentCraft Engineering Lab — Docker Compose runtime smoke.
 #
-# G08-C2: this CI workflow runs the FULL Docker Compose stack and
+# G08-C3: this CI workflow runs the FULL Docker Compose stack and
 # verifies the runtime integration using a SEPARATE test-runner
-# container (not the production API image).
+# container. The production image stays clean (no pytest).
 #
-# C2-2: the API restart is done from the GitHub Actions HOST, not
-# from inside a container. The workflow:
-#   1. Starts all services
-#   2. Creates a session via the test-runner
-#   3. Restarts the API container from the host
-#   4. Waits for the API to be healthy
-#   5. Runs the test-runner AGAIN to verify the session persisted
-#
-# C2-5: any check failure exits the workflow with a non-zero code.
-# C2-6: this workflow is triggered on every push to main + PRs.
-# The run link is automatically available in the GitHub Actions tab.
+# The API restart is done from the GitHub Actions host (not from
+# inside a container). Cookie values are extracted to the host and
+# passed to the test-runner via args.
 
 name: Docker Compose Runtime Smoke
 
@@ -37,23 +29,20 @@ jobs:
 
       - name: Create .env with runtime-generated secrets
         run: |
-          # C1-05 + C2-5: generate strong random secrets at runtime.
           PG_PW=$(openssl rand -hex 16)
           NEO4J_PW=$(openssl rand -hex 16)
           GRAFANA_PW=$(openssl rand -hex 16)
-          cat > .env << EOF
-          APP_ENV=production
-          POSTGRES_PASSWORD=${PG_PW}
-          NEO4J_PASSWORD=${NEO4J_PW}
-          GRAFANA_ADMIN_PASSWORD=${GRAFANA_PW}
-          SESSION_COOKIE_SECURE=true
-          CORS_ORIGINS=["https://agentcraft.example"]
-          SESSION_TTL_HOURS=24
-          RATE_LIMIT_PER_MINUTE=60
-          GDS_LICENSED=false
-          NEO4J_URI=bolt://neo4j:7687
-          OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
-          EOF
+          printf 'APP_ENV=production\n' > .env
+          printf 'POSTGRES_PASSWORD=%s\n' "$PG_PW" >> .env
+          printf 'NEO4J_PASSWORD=%s\n' "$NEO4J_PW" >> .env
+          printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$GRAFANA_PW" >> .env
+          printf 'SESSION_COOKIE_SECURE=true\n' >> .env
+          printf 'CORS_ORIGINS=["https://agentcraft.example"]\n' >> .env
+          printf 'SESSION_TTL_HOURS=24\n' >> .env
+          printf 'RATE_LIMIT_PER_MINUTE=60\n' >> .env
+          printf 'GDS_LICENSED=false\n' >> .env
+          printf 'NEO4J_URI=bolt://neo4j:7687\n' >> .env
+          printf 'OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318\n' >> .env
           echo "PG_PW=${PG_PW}" >> $GITHUB_ENV
           echo "NEO4J_PW=${NEO4J_PW}" >> $GITHUB_ENV
           echo "GRAFANA_PW=${GRAFANA_PW}" >> $GITHUB_ENV
@@ -82,157 +71,106 @@ jobs:
         run: |
           docker compose --profile test build
 
-      # ======== C2-1 + C2-5: Run integration smoke (first pass) ========
       - name: Run integration smoke (first pass)
         run: |
           docker compose run --rm --no-deps test-runner
 
-      # ======== C3-2 + C3-3: Persistence test (restart from HOST) ========
-      # C3-2: create a session, extract the cookie to the HOST, restart
-      # the API from the host, then use the SAME cookie to verify the
-      # session persisted. No new session created for verification.
-      # C3-3: no || true — failure to create the session fails the step.
       - name: Create session + extract cookie to host
-        id: create-session
         run: |
-          # C3-2 + C3-3: create a session, extract the cookie token to
-          # the host. No || true — failure to create fails the step.
-          # We use a single POST request and extract the cookie from
-          # the Set-Cookie header in ONE pass.
           COOKIE_VALUE=$(docker compose run --rm --no-deps test-runner bash -c '
-            # Single POST request + capture headers.
             curl -s -D /tmp/headers -o /tmp/body -X POST http://web:80/api/v1/sessions/guest \
               -H "Content-Type: application/json" \
               -d "{\"locale\":\"en\"}" 2>/dev/null
-
-            # Check the body is non-empty (session was created).
             BODY=$(cat /tmp/body 2>/dev/null || echo "")
             if [ -z "$BODY" ]; then
               echo "ERROR: empty response body" >&2
               exit 1
             fi
-
-            # Extract cookie token from Set-Cookie header.
             COOKIE=$(cat /tmp/headers | grep -i set-cookie | \
               sed "s/.*ac_guest=//;s/;.*//" | tr -d "\r\n")
             if [ -z "$COOKIE" ]; then
-              echo "ERROR: no ac_guest cookie in Set-Cookie header" >&2
+              echo "ERROR: no ac_guest cookie" >&2
               exit 1
             fi
-
-            # Print the cookie token to stdout (captured by the host).
             echo -n "$COOKIE"
           ')
-          RC=$?
-          if [ $RC -ne 0 ] || [ -z "$COOKIE_VALUE" ]; then
+          if [ -z "$COOKIE_VALUE" ]; then
             echo "FAIL: could not create session or extract cookie"
             exit 1
           fi
           echo "Cookie extracted: ${COOKIE_VALUE:0:16}..."
           echo "COOKIE_VALUE=$COOKIE_VALUE" >> $GITHUB_ENV
 
-      - name: Restart API from host (C3-2)
+      - name: Restart API from host
         run: |
           echo "Restarting API container from host..."
           docker compose restart api
-          echo "Waiting for API to be healthy after restart..."
+          echo "Waiting for API to be healthy..."
           timeout 120 bash -c 'until docker compose ps api | grep -i healthy; do sleep 2; done'
           echo "API is healthy after restart"
 
-      - name: Verify persistence using SAME cookie (C3-2 + C3-4)
+      - name: Verify persistence using SAME cookie
         run: |
-          # C3-2: use the SAME cookie from before the restart (not a
-          # new session). The session data is in PostgreSQL.
-          # C3-4: if the cookie is missing, this is a FAILURE, not a
-          # skip.
           if [ -z "$COOKIE_VALUE" ]; then
             echo "FAIL: no cookie value from previous step"
             exit 1
           fi
-
-          # Verify the SAME session works after the restart.
           docker compose run --rm --no-deps test-runner bash -c '
-            # Use the cookie from the environment.
             COOKIE="$1"
             if [ -z "$COOKIE" ]; then
-              echo "FAIL: cookie not passed to container"
+              echo "FAIL: cookie not passed" >&2
               exit 1
             fi
-
-            # Verify the session is usable.
             ME=$(curl -sf http://web:80/api/v1/sessions/me \
               -H "Cookie: ac_guest=$COOKIE" 2>/dev/null || echo "")
             if [ -z "$ME" ]; then
-              echo "FAIL: session not usable after restart (cookie=$COOKIE)"
+              echo "FAIL: session not usable after restart" >&2
               exit 1
             fi
             echo "OK: SAME session usable after API restart"
-
-            # Verify experiments are still loaded (manifests persisted).
             COUNT=$(curl -sf http://web:80/api/v1/experiments \
               -H "Cookie: ac_guest=$COOKIE" 2>/dev/null | \
               python -c "import json,sys; print(json.load(sys.stdin)[\"count\"])" 2>/dev/null || echo "0")
             if [ "$COUNT" != "10" ]; then
-              echo "FAIL: expected 10 experiments after restart, got $COUNT"
+              echo "FAIL: expected 10 experiments, got $COUNT" >&2
               exit 1
             fi
-            echo "OK: 10 experiments loaded after restart (manifests persisted)"
+            echo "OK: 10 experiments loaded after restart"
           ' -- "$COOKIE_VALUE"
 
-      # ======== C3-5: Cookie flags from actual POST response ========
-      - name: Verify cookie flags from actual POST (C3-5)
+      - name: Verify cookie flags from actual POST
         run: |
-          # C3-5: test Secure, HttpOnly, SameSite from the actual
-          # POST response's Set-Cookie header. The HTTPS transport
-          # test (does the browser actually send the cookie over
-          # HTTPS?) is separate and deferred to real deployment.
           docker compose run --rm --no-deps test-runner bash -c '
-            # Make the actual POST request + capture response headers.
             curl -s -D /tmp/headers -o /dev/null -X POST http://web:80/api/v1/sessions/guest \
               -H "Content-Type: application/json" \
               -d "{\"locale\":\"en\"}" 2>/dev/null
-
             HEADER=$(cat /tmp/headers | grep -i set-cookie || echo "")
             if [ -z "$HEADER" ]; then
-              echo "FAIL: no Set-Cookie header in response"
+              echo "FAIL: no Set-Cookie header" >&2
               exit 1
             fi
-            echo "Set-Cookie header: $HEADER"
-
-            # Check HttpOnly.
+            echo "Set-Cookie: $HEADER"
             if echo "$HEADER" | grep -qi "HttpOnly"; then
-              echo "OK: HttpOnly flag present"
+              echo "OK: HttpOnly present"
             else
-              echo "FAIL: HttpOnly flag missing"
+              echo "FAIL: HttpOnly missing" >&2
               exit 1
             fi
-
-            # Check SameSite.
             if echo "$HEADER" | grep -qi "SameSite"; then
-              echo "OK: SameSite flag present"
+              echo "OK: SameSite present"
             else
-              echo "FAIL: SameSite flag missing"
+              echo "FAIL: SameSite missing" >&2
               exit 1
             fi
-
-            # Check Secure (present because SESSION_COOKIE_SECURE=true).
             if echo "$HEADER" | grep -qi "Secure"; then
-              echo "OK: Secure flag present (production mode)"
+              echo "OK: Secure present (production mode)"
             else
-              echo "FAIL: Secure flag missing (expected because SESSION_COOKIE_SECURE=true)"
+              echo "FAIL: Secure missing" >&2
               exit 1
             fi
-
-            # C3-5 note: the Secure flag means the browser will NOT send
-            # this cookie over HTTP. The test above verifies the flag is
-            # PRESENT in the Set-Cookie header (the server sets it
-            # correctly). The actual HTTPS transport test (does the
-            # browser send the cookie over HTTPS?) is deferred to a
-            # real HTTPS deployment.
             echo "NOTE: HTTPS transport test deferred to real deployment"
           '
 
-      # ======== C2-5: Collect logs (always, before teardown) ========
       - name: Collect logs
         if: always()
         run: |
