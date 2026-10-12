@@ -218,3 +218,46 @@ def test_mentor_explain_arabic_lang(client):
         json={"run_id": run_id, "question": "لماذا فشل التشغيل؟", "lang": "ar"},
     )
     assert r2.status_code == 200
+
+
+def test_mentor_provider_mode_always_deterministic_even_when_openai_configured(
+    client, db, settings
+):
+    """G06-C1 reviewer fix: provider_mode must reflect the ACTUAL code
+    path taken, not the provider that is CONFIGURED.
+
+    Even when `settings.mentor_provider == 'openai'` and an API key is
+    set, the current code path is ALWAYS deterministic (there's no
+    actual OpenAI call wired). So provider_mode must be 'deterministic',
+    NOT 'openai'. Reporting 'openai' without an actual call would be
+    dishonest.
+    """
+    from app.services import session_service, run_service, mentor_service
+    from app.config import get_settings
+
+    # Force the settings to claim OpenAI is configured.
+    s = get_settings()
+    original_provider = s.mentor_provider
+    original_key = s.mentor_openai_api_key
+    s.mentor_provider = "openai"
+    s.mentor_openai_api_key = "fake-key-for-testing"
+
+    try:
+        sess = session_service.create_guest_session(db, s, "en")
+        out = run_service.create_and_execute_run(
+            db, s, sess, "graph-first-network", "guided", {},
+        )
+        answer = mentor_service.explain_run(
+            db, s, sess, out.run_id, "why?", "en",
+        )
+        # G06-C1: provider_mode is 'deterministic' because the actual
+        # code path is deterministic. The settings claim OpenAI is
+        # configured, but no OpenAI call was made.
+        assert answer.provider_mode == "deterministic", (
+            f"expected 'deterministic', got {answer.provider_mode!r} — "
+            f"provider_mode must reflect the ACTUAL code path, not the "
+            f"configured provider"
+        )
+    finally:
+        s.mentor_provider = original_provider
+        s.mentor_openai_api_key = original_key

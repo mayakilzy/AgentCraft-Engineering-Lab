@@ -1,5 +1,5 @@
 id: integrated-challenge
-version: 1.1.0
+version: 1.2.0
 module_id: challenge
 level: advanced
 estimated_minutes: 40
@@ -7,8 +7,8 @@ title:
   en: Graph and Observability Challenge
   ar: تحدي الرسم والمراقبة
 description:
-  en: Identify the faulty dependency and its operational symptom using the graph plus the trace. Then fix the issue and verify with a real corrected rerun.
-  ar: حدّد الاعتمادية المعيبة وأعراضها التشغيلية باستخدام الرسم والتتبّع. ثم أصلح المشكلة وتحقق بإعادة تشغيل حقيقية.
+  en: Identify the faulty dependency and its operational symptom using the graph plus the trace. Then demonstrate recovery by running the same workflow WITHOUT injection and verify it passes.
+  ar: حدّد الاعتمادية المعيبة وأعراضها التشغيلية باستخدام الرسم والتتبّع. ثم اعرض الاسترجاع بتشغيل نفس سير العمل WITHOUT حقن وتحقق من نجاحه.
 technology: [NetworkX, OpenTelemetry, Grafana]
 prerequisites: [critical-dependencies, trace-one-request, build-monitoring-dashboard]
 dataset_key: integrated-challenge-v1
@@ -66,14 +66,14 @@ steps:
       failed_run:
         fail_step: transform
         trace_id_present: true
-  - id: fix
-    title: {en: Fix and compare, ar: أصلح وقارن}
-    instruction: {en: Disable the injection, ar: عطّل الحقن، أعد تشغيل trace_demo وتأكد من تنفيذ التشغيل المُصحّح فعلياً ونجاحه.}
+  - id: recovery_demo
+    title: {en: Recovery demonstration, ar: عرض الاسترجاع}
+    instruction: {en: "Run run_trace_demo (a DIFFERENT operation from inject_failure) WITHOUT fail_step to demonstrate the workflow recovers when the injection is disabled. This is NOT a re-execution of the failed operation; it is a demonstration that the same fetch→transform→persist workflow succeeds without the injected failure.", ar: "شغّل run_trace_demo (عملية مختلفة عن inject_failure) WITHOUT fail_step لإثبات أن سير العمل يسترجع عندما يكون الحقن معطّلاً. هذه ليست إعادة تنفيذ للعملية الفاشلة؛ بل عرض أن نفس سير العمل (fetch→transform→persist) ينجح دون الفشل المُحقون."}
     operation_key: run_trace_demo
     input_schema_ref: trace_demo_v1
     validator_key: failure_diagnosis_v1
     inputs:
-      run_id: e10_corrected
+      run_id: e10_recovery
     expected:
       corrected_run_only: true
       corrected_run:
@@ -82,10 +82,13 @@ failure_mode: |
   Both graph and telemetry assertions must pass for the experiment to
   pass. The shortest path (step 2) identifies the critical edge
   (APP1→T1→T3). The inject_failure steps (3-4) verify the failed run
-  has a populated trace_id (ADR-0003 step 5). The corrected rerun
-  (step 5) verifies the corrected case actually passes.
+  has a populated trace_id (ADR-0003 step 5). The recovery demonstration
+  (step 5) verifies the workflow succeeds when the injection is
+  disabled.
 
-  G06-PRE-02: the corrected rerun (step 5) is now a REAL operation, not
-  a fabricated placeholder. If the corrected rerun step fails, the
-  validator on that step fails honestly with `corrected_status=failed
-  != expected ok`, and the run as a whole ends with status=FAILED.
+  G06-C1 reviewer fix: the recovery step (step 5) runs `run_trace_demo`
+  (operation_key=run_trace_demo), which is a DIFFERENT operation from
+  the failed step's `inject_failure` (operation_key=inject_failure).
+  The step is now named "recovery_demo" (not "fix") and its instruction
+  explicitly states this is a recovery demonstration, not a re-execution
+  of the failed operation.

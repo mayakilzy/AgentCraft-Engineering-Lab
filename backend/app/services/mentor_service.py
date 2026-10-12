@@ -121,12 +121,27 @@ def explain_run(
 
 
 def _provider_mode(settings: Settings) -> str:
-    """Determine the provider mode from settings."""
-    if settings.mentor_provider == "openai" and settings.mentor_openai_api_key:
-        return "openai"
-    if settings.mentor_provider == "disabled":
-        return "deterministic"
-    return "deterministic"  # safe fallback
+    """Determine the provider mode from the ACTUAL code path taken.
+
+    G06-C1 reviewer fix: `provider_mode` must reflect the provider that
+    ACTUALLY produced the answer, not the provider that is CONFIGURED.
+
+    The current code path is ALWAYS deterministic — there is no actual
+    OpenAI API call wired (the LLM integration is a future task). Even
+    when `settings.mentor_provider == "openai"` and an API key is set,
+    we still go through `_build_answer` which is a deterministic keyword
+    matcher. Reporting "openai" in that case would be dishonest — we'd
+    be claiming an LLM produced the answer when it didn't.
+
+    When a real OpenAI call is wired (a future task), this function
+    should return "openai" ONLY when the OpenAI code path was actually
+    taken (e.g., the call succeeded and returned a non-empty answer).
+    For now, the honest answer is always "deterministic".
+    """
+    # The deterministic path is the only path. The settings are
+    # acknowledged but do NOT change the reported mode — the mode
+    # reflects what produced the answer, not what was configured.
+    return "deterministic"
 
 
 def _build_answer(

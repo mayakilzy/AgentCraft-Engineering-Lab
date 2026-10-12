@@ -1,5 +1,5 @@
 id: diagnose-hidden-failure
-version: 1.1.0
+version: 1.2.0
 module_id: observability
 level: advanced
 estimated_minutes: 30
@@ -7,8 +7,8 @@ title:
   en: Diagnose a Hidden Failure
   ar: تشخيص عطل خفي
 description:
-  en: Inject a bounded failure at a named step, use the trace to find the failing stage, then rerun the corrected case as a real operation and verify it passes.
-  ar: أدخل عطلاً محدوداً في خطوة مسماة، استخدم التتبّع لتحديد المرحلة الفاشلة، ثم أعد تشغيل الحالة المُصحّحة كعملية حقيقية وتحقق من نجاحها.
+  en: Inject a bounded failure at a named step, use the trace to find the failing stage, then demonstrate recovery by running the same workflow WITHOUT injection and verify it passes.
+  ar: أدخل عطلاً محدوداً في خطوة مسماة، استخدم التتبّع لتحديد المرحلة الفاشلة، ثم اعرض الاسترجاع بتشغيل نفس سير العمل WITHOUT حقن وتحقق من نجاحه.
 technology: [OpenTelemetry, Grafana]
 prerequisites: [trace-one-request, build-monitoring-dashboard]
 dataset_key: failure-demo-v1
@@ -55,14 +55,14 @@ steps:
       failed_run:
         fail_step: transform
         trace_id_present: true
-  - id: rerun_corrected
-    title: {en: Disable injection and rerun, ar: عطّل الحقن وأعد التشغيل}
-    instruction: {en: Run the trace_demo WITHOUT injection; the corrected run must actually execute and pass with status=ok., ar: شغّل trace_demo WITHOUT حقن؛ يجب أن يُنفّذ التشغيل المُصحّح فعلياً وينجح بحالة ok.}
+  - id: recovery_demo
+    title: {en: Recovery demonstration, ar: عرض الاسترجاع}
+    instruction: {en: "Run run_trace_demo (a DIFFERENT operation from inject_failure) WITHOUT fail_step to demonstrate the workflow recovers when the injection is disabled. This is NOT a re-execution of the failed operation; it is a demonstration that the same fetch→transform→persist workflow succeeds without the injected failure.", ar: "شغّل run_trace_demo (عملية مختلفة عن inject_failure) WITHOUT fail_step لإثبات أن سير العمل يسترجع عندما يكون الحقن معطّلاً. هذه ليست إعادة تنفيذ للعملية الفاشلة؛ بل عرض أن نفس سير العمل (fetch→transform→persist) ينجح دون الفشل المُحقون."}
     operation_key: run_trace_demo
     input_schema_ref: trace_demo_v1
     validator_key: failure_diagnosis_v1
     inputs:
-      run_id: e09_corrected
+      run_id: e09_recovery
     expected:
       corrected_run_only: true
       corrected_run:
@@ -72,8 +72,12 @@ failure_mode: |
   The validator asserts the failed run has a populated trace_id so the
   user can find the failing span in Grafana Tempo (ADR-0003 step 5).
 
-  G06-PRE-02: the corrected rerun (step 4) is now a REAL operation, not
-  a fabricated placeholder. If the corrected rerun step fails (e.g., the
-  operation returns status=failed), the validator on that step fails
-  honestly with `corrected rerun status=failed != expected ok`, and
-  the run as a whole ends with status=FAILED.
+  G06-C1 reviewer fix: the recovery step (step 4) runs `run_trace_demo`
+  (operation_key=run_trace_demo), which is a DIFFERENT operation from
+  the failed step's `inject_failure` (operation_key=inject_failure).
+  The step is now named "recovery_demo" (not "rerun_corrected") and
+  its instruction explicitly states this is a recovery demonstration,
+  not a re-execution of the failed operation. Both operations share
+  the same underlying _run_trace_demo function, but the manifest
+  treats them as distinct operations with distinct operation_keys.
+
