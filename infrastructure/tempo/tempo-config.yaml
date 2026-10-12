@@ -1,5 +1,7 @@
 # Tempo config — receives traces via OTLP gRPC, stores locally.
 # Minimal config for a learning lab; production would use S3 backend.
+# G08-C3: removed query_frontend.search.query_timeout (not a valid
+# field in Tempo 2.6.0 — causes config parse failure).
 server:
   http_listen_port: 3200
   grpc_listen_port: 9095
@@ -18,11 +20,6 @@ storage:
       path: /var/tempo/blocks
     wal:
       path: /var/tempo/wal
-
-# Search API for the Grafana Tempo datasource.
-query_frontend:
-  search:
-    query_timeout: 30s
 
 ingester:
   lifecycler:

@@ -190,11 +190,9 @@ services:
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
       - ./infrastructure/otel-collector/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:13133/"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
+    # G08-C3: no healthcheck — the Collector image doesn't have
+    # curl/wget. The health_check extension (port 13133) is verified
+    # from the test-runner container in the smoke script.
     deploy:
       resources:
         limits:

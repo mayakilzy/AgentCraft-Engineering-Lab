@@ -1,6 +1,11 @@
 # OTEL Collector config — receives OTLP (HTTP + gRPC) from the API,
 # exports traces to Tempo and metrics to Prometheus (via scrape).
 # All ports on the private network only; not exposed publicly.
+# G08-C3: added health_check extension on port 13133.
+extensions:
+  health_check:
+    endpoint: "0.0.0.0:13133"
+
 receivers:
   otlp:
     protocols:
@@ -39,6 +44,7 @@ exporters:
     namespace: "agentcraft"
 
 service:
+  extensions: [health_check]
   pipelines:
     traces:
       receivers: [otlp]
