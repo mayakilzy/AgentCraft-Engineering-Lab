@@ -63,8 +63,12 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    ports:
-      - "8000:8000"
+    # G07-C1: the API is NOT exposed publicly. Nginx (the `web` service)
+    # is the only public entry point. Prometheus scrapes /metrics on the
+    # private Docker network (http://api:8000/metrics), not through the
+    # public port. The `ports:` block is intentionally absent.
+    expose:
+      - "8000"
     deploy:
       resources:
         limits:
@@ -106,6 +110,45 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    networks: [agentcraft-net]
+
+  # ---- G07-C1-04: scheduled purge cron ----
+  # Runs `python -m app.cleanup_purge` every 6 hours. The interval is
+  # set by the container's entrypoint (sleep 6h between runs). A real
+  # cron daemon (e.g., supervisord) is overkill for V1; the sleep loop
+  # is simple and survives container restarts because the state is in
+  # PostgreSQL, not in the container.
+  # Retention: worst-case = 6h (purge interval) + 24h (session TTL) = 30h.
+  # Tighten to sleep 3600 (1h) for stricter retention.
+  purge-cron:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    profiles: [core]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-agentcraft}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-agentcraft}
+      NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-changeme}
+      NEO4J_DATABASE: ${NEO4J_DATABASE:-neo4j}
+    # The entrypoint runs the purge once, then sleeps 6h, then repeats.
+    # On container restart, the loop resumes (state is in PostgreSQL).
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          python -m app.cleanup_purge || true
+          echo "purge complete; sleeping 6h"
+          sleep 21600
+        done
     deploy:
       resources:
         limits:

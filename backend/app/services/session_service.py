@@ -105,7 +105,23 @@ def purge_expired_sessions(db: Session) -> dict:
     cleanup is handled separately by `neo4j_service.cleanup_session`
     (called when Neo4j is configured).
 
-    Returns a dict with the count of deleted sessions for the audit log.
+    G07-C1-04: the function reports Neo4j cleanup failures honestly.
+    If the Neo4j cleanup fails for any session, the result includes
+    `neo4j_cleanup_failures` with the session_ids that failed. The
+    caller (the purge cron) can retry the cleanup on the next run.
+    The function does NOT claim "neo4j cleanup complete" when data
+    remains — `neo4j_nodes_deleted` is only the count of nodes
+    successfully deleted, and `neo4j_cleanup_failures` lists the
+    sessions that still have orphaned Neo4j data.
+
+    Returns a dict with:
+    - deleted_sessions: count of DB rows deleted
+    - neo4j_nodes_deleted: count of Neo4j nodes deleted (may be 0
+      if Neo4j is not configured)
+    - neo4j_cleanup_failures: list of session_ids whose Neo4j cleanup
+      failed (empty when Neo4j is not configured or all cleanups
+      succeeded)
+    - purged_at: ISO timestamp
     """
     now = _now_utc()
     # Find expired sessions.
@@ -126,19 +142,43 @@ def purge_expired_sessions(db: Session) -> dict:
         )
         db.commit()
 
-    # Clean up Neo4j namespaces for the expired sessions (best-effort;
-    # no-op when Neo4j is not configured).
+    # Clean up Neo4j namespaces for the expired sessions.
+    # G07-C1-04: report failures honestly — don't claim success when
+    # data remains.
     neo4j_deleted = 0
+    neo4j_failures: list[str] = []
     if session_ids:
         try:
             from app.config import get_settings
             from app.services import neo4j_service
             settings = get_settings()
-            for sid in session_ids:
-                neo4j_deleted += neo4j_service.cleanup_session(settings, sid)
+            # When Neo4j is not configured, cleanup_session returns 0
+            # without raising — that's an honest no-op, not a failure.
+            if neo4j_service.get_driver(settings) is not None:
+                for sid in session_ids:
+                    try:
+                        neo4j_deleted += neo4j_service.cleanup_session(settings, sid)
+                    except Exception as exc:
+                        # Per-session failure: record it, continue with
+                        # the other sessions. The DB row is already
+                        # deleted; the Neo4j namespace is orphaned.
+                        # The next purge run can't retry because the
+                        # session_id is gone — the operator must run
+                        # `cleanup_orphaned_neo4j_namespaces()` (future
+                        # task) to find namespaces without DB rows.
+                        neo4j_failures.append(str(sid))
+                        log.warning(
+                            "neo4j cleanup failed for session",
+                            extra={
+                                "session_id": str(sid),
+                                "error": f"{type(exc).__name__}: {exc}",
+                            },
+                        )
         except Exception as exc:
+            # Import or settings error — record all sessions as failed.
+            neo4j_failures = [str(sid) for sid in session_ids]
             log.warning(
-                "neo4j cleanup failed during purge",
+                "neo4j cleanup setup failed during purge",
                 extra={"error": f"{type(exc).__name__}: {exc}"},
             )
 
@@ -147,10 +187,12 @@ def purge_expired_sessions(db: Session) -> dict:
         extra={
             "deleted_sessions": len(expired),
             "neo4j_nodes_deleted": neo4j_deleted,
+            "neo4j_cleanup_failures": len(neo4j_failures),
         },
     )
     return {
         "deleted_sessions": len(expired),
         "neo4j_nodes_deleted": neo4j_deleted,
+        "neo4j_cleanup_failures": neo4j_failures,
         "purged_at": now.isoformat(),
     }

@@ -261,29 +261,53 @@ def test_compose_has_resource_limits():
 # ---- T26: Compose admin ports not exposed ----
 
 def test_compose_admin_ports_not_exposed():
-    """T26 + ADR-0003 Part B #2: Prometheus (9090), Tempo (3200),
-    OTEL Collector (4317/4318/8889) must NOT be exposed publicly.
-    Only Grafana (3000) and API (8000) + web (8080) have public ports."""
+    """T26 + ADR-0003 Part B #2 + G07-C1-02: Prometheus (9090),
+    Tempo (3200), OTEL Collector (4317/4318/8889) must NOT be exposed
+    publicly. The FastAPI backend (8000) is NOT exposed publicly either
+    — Nginx (the `web` service on 8080) is the only public entry point.
+    Only Grafana (3000) and web (8080) have public ports."""
     compose = Path(__file__).resolve().parents[3] / "docker-compose.yml"
     content = compose.read_text()
 
-    # The only ports that should be mapped are 8000 (api), 8080 (web), 3000 (grafana).
-    # We check that 9090 (prometheus), 3200 (tempo) are NOT in a ports: block.
+    # Find all "ports:" blocks (public port mappings).
     import re
-    # Find all "ports:" blocks.
     ports_blocks = re.findall(r"ports:\s*\n\s+-\s+\"([^\"]+)\"", content)
     exposed = set()
     for block in ports_blocks:
         # Extract the host port (before the colon or the full value).
         host_port = block.split(":")[0]
         exposed.add(host_port)
-    assert "8000" in exposed  # api
-    assert "8080" in exposed  # web
+    # G07-C1-02: the API port 8000 must NOT be in the public ports list.
+    # Only 8080 (nginx/web) and 3000 (grafana) are public.
+    assert "8080" in exposed  # web (nginx)
     assert "3000" in exposed  # grafana
+    assert "8000" not in exposed  # api NOT exposed (G07-C1-02)
     assert "9090" not in exposed  # prometheus NOT exposed
     assert "3200" not in exposed  # tempo NOT exposed
     assert "4317" not in exposed  # otel collector NOT exposed
     assert "4318" not in exposed  # otel collector NOT exposed
+
+
+def test_compose_api_uses_expose_not_ports():
+    """G07-C1-02: the API service uses `expose:` (internal-only) not
+    `ports:` (public mapping). Prometheus scrapes /metrics on the
+    private Docker network (http://api:8000/metrics)."""
+    compose = Path(__file__).resolve().parents[3] / "docker-compose.yml"
+    content = compose.read_text()
+    # The api service must have `expose: ["8000"]` (internal-only).
+    # We check that the api service has an `expose:` block with 8000.
+    assert 'expose:' in content
+    assert '"8000"' in content or "'8000'" in content
+
+
+def test_compose_purge_cron_service_exists():
+    """G07-C1-04: a `purge-cron` Compose service exists and runs the
+    cleanup_purge command on a schedule."""
+    compose = Path(__file__).resolve().parents[3] / "docker-compose.yml"
+    content = compose.read_text()
+    assert "purge-cron:" in content
+    assert "app.cleanup_purge" in content
+    assert "sleep" in content  # the schedule loop
 
 
 # ---- T26: Session cookie Secure flag (config) ----
