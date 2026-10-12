@@ -24,6 +24,7 @@ from app.api.v1 import lab as lab_router
 from app.api.v1 import observability as observability_router
 from app.api.v1 import runs as runs_router
 from app.api.v1.runs import experiments_router as experiments_runs_router
+from app.api.v1 import mentor as mentor_router
 from app.config import Settings, get_settings
 from app.core.errors import (
     AppError,
@@ -194,6 +195,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # with the contract).
     app.include_router(runs_router.router, prefix="/api/v1")
     app.include_router(experiments_runs_router, prefix="/api/v1")
+    # G06: mentor (read-only, deterministic fallback).
+    app.include_router(mentor_router.router, prefix="/api/v1")
 
     # Prometheus scrape endpoint. Public (Prometheus needs to scrape it)
     # but exposes only bounded-aggregate counters/histograms — no PII.

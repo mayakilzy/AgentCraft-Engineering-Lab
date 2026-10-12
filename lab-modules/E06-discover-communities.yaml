@@ -1,5 +1,5 @@
 id: discover-communities
-version: 1.0.0
+version: 1.1.0
 module_id: graph
 level: intermediate
 estimated_minutes: 25
@@ -22,6 +22,9 @@ steps:
     operation_key: seed_graph
     input_schema_ref: seed_graph_v1
     validator_key: seed_five_nodes_v1
+    inputs:
+      dataset_id: e06
+      fixture_key: communities-v1
     expected:
       node_count: 9
       edge_count: 10
@@ -31,6 +34,8 @@ steps:
     operation_key: communities_detect
     input_schema_ref: communities_v1
     validator_key: communities_v1
+    inputs:
+      dataset_id: e06
     expected:
       expected_communities_count: 3
   - id: project_and_run
@@ -39,6 +44,8 @@ steps:
     operation_key: communities_detect
     input_schema_ref: communities_v1
     validator_key: communities_v1
+    inputs:
+      dataset_id: e06
     expected:
       expected_communities_count: 3
   - id: explain
@@ -47,6 +54,8 @@ steps:
     operation_key: communities_detect
     input_schema_ref: communities_v1
     validator_key: communities_v1
+    inputs:
+      dataset_id: e06
     expected:
       expected_communities_count: 3
 failure_mode: |

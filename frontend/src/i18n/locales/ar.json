@@ -87,7 +87,12 @@
     "runStarted": "بدأ التشغيل…",
     "runCreated": "تم إنشاء التشغيل",
     "showAllSteps": "عرض كل الخطوات",
-    "hideSteps": "إخفاء الخطوات"
+    "hideSteps": "إخفاء الخطوات",
+    "textMode": "نص",
+    "jsonMode": "JSON",
+    "invalidJson": "JSON غير صالح — تحقق من الصياغة",
+    "invalidText": "مدخلات غير صالحة — استخدم أزواج key:value",
+    "servicesNotConfigured": "Grafana/Tempo غير مُعدّان في هذه البيئة. تم تعبئة trace_id؛ سيتوفر الرابط العميق بعد نشر G07."
   },
   "history": {
     "title": "سجل التشغيلات",

@@ -187,35 +187,69 @@ export function ExperimentsPage() {
                 <h3 className="font-medium text-ink-900">
                   {t('experiments.compareResults')}
                 </h3>
-                <dl className="mt-2 grid grid-cols-2 gap-2">
-                  <div>
-                    <dt className="text-ink-900/60">
+                <dl className="mt-2 grid grid-cols-3 gap-2">
+                  <div className="rounded bg-white p-2">
+                    <dt className="text-[10px] text-ink-900/60">
                       {t('experiments.sameExperiment')}
                     </dt>
-                    <dd>{String(compareResult.same_experiment)}</dd>
+                    <dd className="mt-0.5 text-sm font-medium">
+                      {compareResult.same_experiment ? '✓' : '✗'}
+                    </dd>
                   </div>
-                  <div>
-                    <dt className="text-ink-900/60">
+                  <div className="rounded bg-white p-2">
+                    <dt className="text-[10px] text-ink-900/60">
                       {t('experiments.sameStatus')}
                     </dt>
-                    <dd>{String(compareResult.same_final_status)}</dd>
+                    <dd className="mt-0.5 text-sm font-medium">
+                      {compareResult.same_final_status ? '✓' : '✗'}
+                    </dd>
                   </div>
-                  <div>
-                    <dt className="text-ink-900/60">
+                  <div className="rounded bg-white p-2">
+                    <dt className="text-[10px] text-ink-900/60">
                       {t('experiments.sameStepCount')}
                     </dt>
-                    <dd>{String(compareResult.same_step_count)}</dd>
+                    <dd className="mt-0.5 text-sm font-medium">
+                      {compareResult.same_step_count ? '✓' : '✗'}
+                    </dd>
                   </div>
                 </dl>
                 <p className="mt-2 text-ink-900/70">{compareResult.note}</p>
-                <details className="mt-2">
-                  <summary className="cursor-pointer text-ink-900/70">
-                    {t('experiments.steps')} ({compareResult.step_diffs.length})
-                  </summary>
-                  <pre className="mt-1 overflow-x-auto rounded bg-white p-2 text-[10px]">
-                    {JSON.stringify(compareResult.step_diffs, null, 2)}
-                  </pre>
-                </details>
+                {compareResult.step_diffs.length > 0 && (
+                  <div className="mt-3">
+                    <h4 className="text-[10px] font-medium text-ink-900/70">
+                      {t('experiments.steps')}
+                    </h4>
+                    <table className="mt-1 w-full text-[10px]">
+                      <thead>
+                        <tr className="border-b border-ink-100 text-left">
+                          <th className="py-1 pr-2">#</th>
+                          <th className="py-1 pr-2">{t('experiments.step')}</th>
+                          <th className="py-1 pr-2">A {t('experiments.verdict')}</th>
+                          <th className="py-1 pr-2">B {t('experiments.verdict')}</th>
+                          <th className="py-1 pr-2">Match</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {compareResult.step_diffs.map((d, i) => (
+                          <tr
+                            key={i}
+                            className={`border-b border-ink-50 ${
+                              d.same_verdict === false ? 'bg-amber-50' : ''
+                            }`}
+                          >
+                            <td className="py-1 pr-2">{i + 1}</td>
+                            <td className="py-1 pr-2">{String(d.step_id ?? '-')}</td>
+                            <td className="py-1 pr-2">{String(d.a_passed ?? '-')}</td>
+                            <td className="py-1 pr-2">{String(d.b_passed ?? '-')}</td>
+                            <td className="py-1 pr-2">
+                              {d.same_verdict === true ? '✓' : d.same_verdict === false ? '✗' : '?'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </section>

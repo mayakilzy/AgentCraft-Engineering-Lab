@@ -1,5 +1,5 @@
 id: diagnose-hidden-failure
-version: 1.0.0
+version: 1.1.0
 module_id: observability
 level: advanced
 estimated_minutes: 30
@@ -7,8 +7,8 @@ title:
   en: Diagnose a Hidden Failure
   ar: تشخيص عطل خفي
 description:
-  en: Inject a bounded failure at a named step, use the trace to find the failing stage, ask the mentor and rerun the corrected case.
-  ar: أدخل عطلاً محدوداً في خطوة مسماة، استخدم التتبّع لتحديد المرحلة الفاشلة، استشر الموجّه وأعد تشغيل الحالة المُصحّحة.
+  en: Inject a bounded failure at a named step, use the trace to find the failing stage, then rerun the corrected case as a real operation and verify it passes.
+  ar: أدخل عطلاً محدوداً في خطوة مسماة، استخدم التتبّع لتحديد المرحلة الفاشلة، ثم أعد تشغيل الحالة المُصحّحة كعملية حقيقية وتحقق من نجاحها.
 technology: [OpenTelemetry, Grafana]
 prerequisites: [trace-one-request, build-monitoring-dashboard]
 dataset_key: failure-demo-v1
@@ -22,45 +22,58 @@ steps:
     operation_key: inject_failure
     input_schema_ref: inject_failure_v1
     validator_key: failure_diagnosis_v1
+    inputs:
+      run_id: e09
+      fail_step: transform
     expected:
       failed_run:
         fail_step: transform
-      corrected_run:
-        status: ok
+        trace_id_present: true
   - id: inspect
     title: {en: Inspect trace and logs, ar: افحص التتبّع والسجلات}
     instruction: {en: Use the observability links endpoint to find the failing span and the run's error_code., ar: استخدم نقطة روابط المراقبة لتحديد الفترة الفاشلة و error_code للتشغيل.}
     operation_key: inject_failure
     input_schema_ref: inject_failure_v1
     validator_key: failure_diagnosis_v1
+    inputs:
+      run_id: e09
+      fail_step: transform
     expected:
       failed_run:
         fail_step: transform
-      corrected_run:
-        status: ok
+        trace_id_present: true
   - id: mentor
     title: {en: Ask mentor, ar: استشر الموجّه}
     instruction: {en: Use the mentor endpoint (when configured) with the run_id; the deterministic fallback explains the failed step when no provider is configured., ar: استخدم نقطة الموجّه (إن وُجدت) مع run_id؛ البديل الحتمي يشرح الخطوة الفاشلة عند غياب المزوّد.}
     operation_key: inject_failure
     input_schema_ref: inject_failure_v1
     validator_key: failure_diagnosis_v1
+    inputs:
+      run_id: e09
+      fail_step: transform
     expected:
       failed_run:
         fail_step: transform
-      corrected_run:
-        status: ok
-  - id: rerun
+        trace_id_present: true
+  - id: rerun_corrected
     title: {en: Disable injection and rerun, ar: عطّل الحقن وأعد التشغيل}
-    instruction: {en: Run the trace_demo without injection; the corrected run must pass with status=ok., ar: شغّل trace_demo دون حقن؛ يجب أن ينجح التشغيل المُصحّح بحالة ok.}
+    instruction: {en: Run the trace_demo WITHOUT injection; the corrected run must actually execute and pass with status=ok., ar: شغّل trace_demo WITHOUT حقن؛ يجب أن يُنفّذ التشغيل المُصحّح فعلياً وينجح بحالة ok.}
     operation_key: run_trace_demo
     input_schema_ref: trace_demo_v1
     validator_key: failure_diagnosis_v1
+    inputs:
+      run_id: e09_corrected
     expected:
-      failed_run:
-        fail_step: transform
+      corrected_run_only: true
       corrected_run:
         status: ok
 failure_mode: |
   An invalid fail_step (e.g. `evil-step`) produces `error_code=bad_input`.
   The validator asserts the failed run has a populated trace_id so the
   user can find the failing span in Grafana Tempo (ADR-0003 step 5).
+
+  G06-PRE-02: the corrected rerun (step 4) is now a REAL operation, not
+  a fabricated placeholder. If the corrected rerun step fails (e.g., the
+  operation returns status=failed), the validator on that step fails
+  honestly with `corrected rerun status=failed != expected ok`, and
+  the run as a whole ends with status=FAILED.

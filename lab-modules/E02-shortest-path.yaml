@@ -1,5 +1,5 @@
 id: shortest-path
-version: 1.0.0
+version: 1.1.0
 module_id: graph
 level: beginner
 estimated_minutes: 20
@@ -22,6 +22,9 @@ steps:
     operation_key: seed_graph
     input_schema_ref: seed_graph_v1
     validator_key: seed_five_nodes_v1
+    inputs:
+      dataset_id: e02
+      fixture_key: directed-path-v1
     expected:
       node_count: 6
       edge_count: 4
@@ -31,6 +34,10 @@ steps:
     operation_key: shortest_path
     input_schema_ref: shortest_path_v1
     validator_key: shortest_path_directed_v1
+    inputs:
+      dataset_id: e02
+      source: A
+      target: T3
     expected:
       path: [A, T1, T2, T3]
   - id: unreachable
@@ -39,6 +46,10 @@ steps:
     operation_key: shortest_path
     input_schema_ref: shortest_path_v1
     validator_key: shortest_path_directed_v1
+    inputs:
+      dataset_id: e02
+      source: A
+      target: ISO
     expected:
       path: null
 failure_mode: |

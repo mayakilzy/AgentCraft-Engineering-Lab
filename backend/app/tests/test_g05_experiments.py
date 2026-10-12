@@ -593,50 +593,32 @@ def test_E01_full_run_via_api_passes(client):
 
 
 def test_E02_full_run_via_api_passes(client):
-    """A16: a complete run of E02 via the API produces a PASSED run.
-
-    Note: E02 has three steps (seed, shortest_path, unreachable). All
-    three share the same dataset_id and fixture_key. The shortest_path
-    step needs source=A, target=T3, and the unreachable step needs
-    source=A, target=ISO. The runner passes ALL inputs to ALL steps;
-    each step's operation extracts the keys it needs. For the validator
-    on each step to pass, we need the expected block in the manifest to
-    match what the operation returns — which it does for the seeded
-    success case."""
+    """G06-PRE-01: E02 now has step.inputs for each step. The manifest
+    declares `dataset_id=e02, fixture_key=directed-path-v1` for the seed
+    step, `source=A, target=T3` for the shortest_path step, and
+    `source=A, target=ISO` for the unreachable step. The runner merges
+    step.inputs on top of run-level inputs (step.inputs wins), so each
+    step receives the correct per-step parameters and all three
+    validators pass.
+    """
     client.post("/api/v1/sessions/guest", json={"locale": "en"})
     r = client.post(
         "/api/v1/experiments/shortest-path/runs",
         json={
             "mode": "guided",
-            "inputs": {
-                "dataset_id": "e02-e2e",
-                "fixture_key": "directed-path-v1",
-                # Provide source/target — but E02 has multiple steps that
-                # need different source/target pairs. The run shares
-                # the same inputs across all steps. The first shortest_path
-                # step expects path [A, T1, T2, T3] (source=A, target=T3);
-                # the second expects path=null (source=A, target=ISO).
-                # We can't make both pass with one set of inputs in V1.
-                # So we test with source=A, target=T3 — the first step
-                # passes, the second fails (the validator's expected is
-                # path=null but the operation returns the same path).
-                # That's an honest run-record outcome (one step passes,
-                # one step fails). For the full E2E PASS, we'd need a
-                # per-step input mechanism (out of V1 scope).
-                "source": "A",
-                "target": "T3",
-            },
+            # No run-level inputs needed — the manifest's step.inputs
+            # provide all the parameters. We pass an empty dict.
+            "inputs": {},
         },
     )
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
     body = r.json()
-    # The first two steps (seed + first shortest_path) pass; the third
-    # step (unreachable) fails because the operation returns the same
-    # path (source=A, target=T3) but the validator expects path=null.
-    # That's the expected behaviour for V1: the run is FAILED with the
-    # honest diagnostic that the third step's expected didn't match.
-    assert body["status"] == "FAILED"
+    # G06-PRE-01: all three steps now pass because step.inputs give each
+    # step the correct per-step parameters.
+    assert body["status"] == "PASSED", body
     assert len(body["step_verdicts"]) == 3
+    for v in body["step_verdicts"]:
+        assert v["validator_passed"] is True
 
 
 def test_E07_full_run_via_api_passes(client):
@@ -658,33 +640,35 @@ def test_E07_full_run_via_api_passes(client):
 
 
 def test_E09_full_run_via_api_diagnoses_failure(client):
-    """A16: a complete run of E09 via the API. E09's manifest steps use
-    the inject_failure operation for steps 1-3 and run_trace_demo for the
-    rerun step 4. The inject_failure step's outputs are wrapped by the
-    run_service so the failure_diagnosis_v1 validator sees the expected
-    failed_run + corrected_run shape. With fail_step=transform, the
-    failed_run.fail_step matches, the corrected_run.status is ok (since
-    the trace_id is set), and the validator passes."""
+    """G06-PRE-02: E09 now has a REAL corrected rerun step (step 4 uses
+    `run_trace_demo` with `run_id: e09_corrected` and no `fail_step`).
+    The manifest's step.inputs supply `fail_step: transform` for steps
+    1–3 (inject_failure) and just `run_id: e09_corrected` for step 4
+    (run_trace_demo, no failure injection). The first 3 steps verify
+    the failed run (failed_run.fail_step=transform + trace_id present);
+    the 4th step verifies the corrected rerun actually executes and
+    passes (operation status=ok). The run as a whole PASSES when all
+    four steps pass.
+    """
     client.post("/api/v1/sessions/guest", json={"locale": "en"})
     r = client.post(
         "/api/v1/experiments/diagnose-hidden-failure/runs",
         json={
             "mode": "guided",
-            "inputs": {
-                "run_id": "e09-e2e",
-                "fail_step": "transform",
-            },
+            # No run-level inputs needed — the manifest's step.inputs
+            # provide all the parameters (fail_step for steps 1–3,
+            # run_id for step 4).
+            "inputs": {},
         },
     )
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
     body = r.json()
-    # The first 3 steps use inject_failure → wrap into failed_run + corrected_run.
-    # The 4th step uses run_trace_demo → produces spans but no failed_run/corrected_run.
-    # The validator on step 4 sees outputs without the failed_run/corrected_run
-    # blocks → the validator's expected has failed_run.fail_step=transform
-    # but the actual has no failed_run → fail_step mismatch → step 4 fails.
-    # That's an honest outcome: the run ends with FAILED status.
-    assert body["status"] in ("FAILED", "PASSED")
+    # G06-PRE-02: all four steps now pass — steps 1–3 verify the failed
+    # run (failed_run.fail_step=transform + trace_id present), and step
+    # 4 verifies the corrected rerun actually passes.
+    assert body["status"] == "PASSED", body
     assert len(body["step_verdicts"]) == 4
+    for v in body["step_verdicts"]:
+        assert v["validator_passed"] is True
     # The trace_id must be populated regardless.
     assert body["trace_id"] is not None

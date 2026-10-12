@@ -1,5 +1,5 @@
 id: graph-first-network
-version: 1.0.0
+version: 1.1.0
 module_id: graph
 level: beginner
 estimated_minutes: 20
@@ -22,6 +22,9 @@ steps:
     operation_key: seed_graph
     input_schema_ref: seed_graph_v1
     validator_key: seed_five_nodes_v1
+    inputs:
+      dataset_id: e01
+      fixture_key: starter-five-v1
     expected:
       node_count: 5
       edge_count: 4
@@ -37,6 +40,8 @@ steps:
     operation_key: graph_metrics
     input_schema_ref: graph_metrics_v1
     validator_key: seed_five_nodes_v1
+    inputs:
+      dataset_id: e01
     expected:
       node_count: 5
       edge_count: 4
@@ -46,6 +51,8 @@ steps:
     operation_key: graph_metrics
     input_schema_ref: graph_metrics_v1
     validator_key: seed_five_nodes_v1
+    inputs:
+      dataset_id: e01
     expected:
       node_count: 5
       edge_count: 4

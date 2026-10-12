@@ -372,3 +372,34 @@ export async function compareRuns(
   });
   return parseResponse<CompareResponse>(res);
 }
+
+// ---- Mentor (G06 T22) ----
+
+export interface MentorRequest {
+  run_id: string;
+  question: string;
+  lang: 'en' | 'ar';
+}
+
+export interface MentorResponse {
+  answer: string;
+  diagnosis_state: 'confirmed' | 'likely' | 'insufficient_evidence';
+  evidence_refs: Array<Record<string, unknown>>;
+  next_checks: string[];
+  provider_mode: string;
+}
+
+export async function askMentor(
+  body: MentorRequest,
+): Promise<MentorResponse> {
+  const res = await fetch('/api/v1/mentor/explain', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Request-Id': newRequestId(),
+    },
+    body: JSON.stringify(body),
+  });
+  return parseResponse<MentorResponse>(res);
+}

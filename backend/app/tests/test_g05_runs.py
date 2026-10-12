@@ -55,23 +55,56 @@ def test_create_run_e01_passes_via_api(client):
 
 
 def test_create_run_e01_fails_with_bad_fixture(client):
-    """POST /experiments/graph-first-network/runs with a bad fixture key
-    produces a FAILED run (honest negative)."""
+    """G06-PRE-01 contract change: the manifest's step.inputs override
+    run-level inputs. Passing a bad `fixture_key` in run-level inputs
+    no longer causes the seed step to fail because step.inputs has
+    `fixture_key: starter-five-v1` which takes priority.
+
+    To test the bad-input path, we test the operation DIRECTLY (without
+    the run runner), which is the G05 behaviour the test originally
+    documented.
+    """
+    from app.lab import get_operation
+    from app.services import session_service
+    from app.db.session import SessionLocal
+    from app.config import get_settings
+
+    db = SessionLocal()
+    try:
+        s = get_settings()
+        sess = session_service.create_guest_session(db, s, "en")
+        op = get_operation("seed_graph")
+        result = op(db, s, sess, {
+            "dataset_id": "e01-bad-direct",
+            "fixture_key": "does-not-exist",
+        })
+        assert result.status == "failed"
+        assert result.error_code is not None
+    finally:
+        db.close()
+
+
+def test_create_run_e01_step_inputs_override_run_inputs(client):
+    """G06-PRE-01 positive test: the manifest's step.inputs correctly
+    override run-level inputs. Passing `fixture_key=does-not-exist` at
+    the run level should NOT cause a failure because the manifest's
+    step.inputs has `fixture_key: starter-five-v1` which wins.
+    """
     client.post("/api/v1/sessions/guest", json={"locale": "en"})
     r = client.post(
         "/api/v1/experiments/graph-first-network/runs",
         json={
             "mode": "guided",
             "inputs": {
-                "dataset_id": "e01-bad",
+                "dataset_id": "this-is-ignored",
                 "fixture_key": "does-not-exist",
             },
         },
     )
     assert r.status_code == 200
     body = r.json()
-    # The seed operation fails → the validator fails → run status = FAILED.
-    assert body["status"] == "FAILED"
+    # The step.inputs override → the seed succeeds → run status = PASSED.
+    assert body["status"] == "PASSED"
 
 
 def test_create_run_unknown_experiment_returns_404(client):
@@ -176,11 +209,16 @@ def test_list_runs_filter_by_experiment(client):
 # ---- POST /api/v1/runs/{id}/reset ----
 
 def test_reset_run_deletes_graph_data(client):
+    """G06-PRE-01: the run-level `dataset_id=e01-reset` is OVERRIDDEN by
+    the manifest's step.inputs which has `dataset_id=e01`. The reset
+    must delete the rows that were ACTUALLY seeded (under dataset_id=e01,
+    the effective per-step input), not the run-level dataset_id.
+    """
     client.post("/api/v1/sessions/guest", json={"locale": "en"})
     r = client.post(
         "/api/v1/experiments/graph-first-network/runs",
         json={"mode": "guided", "inputs": {
-            "dataset_id": "e01-reset",
+            "dataset_id": "e01-reset",  # overridden by step.inputs
             "fixture_key": "starter-five-v1",
         }},
     )
@@ -189,9 +227,13 @@ def test_reset_run_deletes_graph_data(client):
     r2 = client.post(f"/api/v1/runs/{run_id}/reset")
     assert r2.status_code == 200
     body = r2.json()
+    # The reset finds the rows under dataset_id=e01 (from step.inputs).
     assert body["deleted_nodes"] == 5
     assert body["deleted_edges"] == 4
-    assert body["dataset_id"] == "e01-reset"
+    # G06-PRE-01: the API returns the effective dataset_id (e01), not
+    # the run-level one (e01-reset).
+    assert "e01" in body.get("dataset_ids", [])
+    assert body["dataset_id"] == "e01"
 
     # The original run record is NOT mutated (terminal immutability).
     r3 = client.get(f"/api/v1/runs/{run_id}")

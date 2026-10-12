@@ -116,6 +116,7 @@ class ResetResponse(BaseModel):
     run_id: str
     experiment_id: str
     dataset_id: Optional[str]
+    dataset_ids: List[str] = Field(default_factory=list)
     deleted_nodes: int
     deleted_edges: int
     reset_event_id: str

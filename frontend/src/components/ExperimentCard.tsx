@@ -12,11 +12,13 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
   ExperimentManifest,
+  MentorResponse,
   RunCreateResponse,
   RunRecord,
   StepVerdict,
 } from '../api/client';
 import {
+  askMentor,
   createRun,
   exportRun,
   resetRun,
@@ -47,6 +49,11 @@ export function ExperimentCard({
   const [history, setHistory] = useState<RunRecord[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [expandedSteps, setExpandedSteps] = useState(false);
+  const [inputsFormat, setInputsFormat] = useState<'text' | 'json'>('text');
+  const [inputsError, setInputsError] = useState<string | null>(null);
+  const [mentorQuestion, setMentorQuestion] = useState('');
+  const [mentorAnswer, setMentorAnswer] = useState<MentorResponse | null>(null);
+  const [mentorLoading, setMentorLoading] = useState(false);
 
   const pick = (text: { en: string; ar: string }) =>
     locale === 'ar' ? text.ar : text.en;
@@ -54,8 +61,18 @@ export function ExperimentCard({
   async function handleRun() {
     setRunning(true);
     setError(null);
+    setInputsError(null);
     try {
-      const inputs = parseInputs(inputsText);
+      const inputs = parseInputs(inputsText, inputsFormat);
+      if (inputs === null) {
+        setInputsError(
+          inputsFormat === 'json'
+            ? 'Invalid JSON — check syntax'
+            : 'Invalid inputs — use key:value pairs',
+        );
+        setRunning(false);
+        return;
+      }
       const result = await createRun(manifest.id, { mode, inputs });
       setLastRun(result);
       // Refresh history after a successful run.
@@ -102,6 +119,23 @@ export function ExperimentCard({
       URL.revokeObjectURL(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function handleAskMentor() {
+    if (!lastRun || !mentorQuestion.trim()) return;
+    setMentorLoading(true);
+    try {
+      const res = await askMentor({
+        run_id: lastRun.run_id,
+        question: mentorQuestion,
+        lang: locale,
+      });
+      setMentorAnswer(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setMentorLoading(false);
     }
   }
 
@@ -239,13 +273,60 @@ export function ExperimentCard({
         <label className="mt-3 block text-xs text-ink-900/70">
           <span className="font-medium">{t('experiments.inputsLabel')}</span>
           <span className="ml-1 text-ink-900/50">({t('experiments.inputsHint')})</span>
-          <input
-            type="text"
-            value={inputsText}
-            onChange={(e) => setInputsText(e.target.value)}
-            className="mt-1 w-full rounded border border-ink-100 bg-white px-2 py-1 text-xs"
-            data-testid={`inputs-${manifest.id}`}
-          />
+          <div className="mt-1 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setInputsFormat('text')}
+              className={`rounded px-2 py-0.5 text-[10px] ${
+                inputsFormat === 'text'
+                  ? 'bg-ink-900 text-white'
+                  : 'bg-ink-50 text-ink-900/70'
+              }`}
+              aria-pressed={inputsFormat === 'text'}
+            >
+              Text
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputsFormat('json')}
+              className={`rounded px-2 py-0.5 text-[10px] ${
+                inputsFormat === 'json'
+                  ? 'bg-ink-900 text-white'
+                  : 'bg-ink-50 text-ink-900/70'
+              }`}
+              aria-pressed={inputsFormat === 'json'}
+            >
+              JSON
+            </button>
+            {inputsError && (
+              <span
+                role="alert"
+                className="text-[10px] text-red-700"
+                data-testid={`inputs-error-${manifest.id}`}
+              >
+                {inputsError}
+              </span>
+            )}
+          </div>
+          {inputsFormat === 'json' ? (
+            <textarea
+              value={inputsText}
+              onChange={(e) => setInputsText(e.target.value)}
+              className="mt-1 w-full rounded border border-ink-100 bg-white px-2 py-1 font-mono text-xs"
+              rows={3}
+              placeholder='{"key": "value"}'
+              data-testid={`inputs-${manifest.id}`}
+              spellCheck={false}
+            />
+          ) : (
+            <input
+              type="text"
+              value={inputsText}
+              onChange={(e) => setInputsText(e.target.value)}
+              className="mt-1 w-full rounded border border-ink-100 bg-white px-2 py-1 text-xs"
+              data-testid={`inputs-${manifest.id}`}
+            />
+          )}
         </label>
 
         <div className="mt-3 flex flex-wrap gap-2">
@@ -325,6 +406,73 @@ export function ExperimentCard({
               <StepVerdictView key={idx} verdict={v} idx={idx + 1} />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Mentor (T22) — ask a grounded question about the last run */}
+      {lastRun && (
+        <div className="mt-3 rounded border border-ink-100 bg-ink-50/50 p-3 text-xs">
+          <h4 className="font-medium text-ink-900">Ask Mentor</h4>
+          <p className="mt-0.5 text-ink-900/60">
+            Ask a question about the run's outcome. The mentor uses only
+            the run's evidence — no cross-session data.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <input
+              type="text"
+              value={mentorQuestion}
+              onChange={(e) => setMentorQuestion(e.target.value)}
+              placeholder="e.g., why did the run fail?"
+              className="flex-1 rounded border border-ink-100 bg-white px-2 py-1 text-xs"
+              data-testid={`mentor-question-${manifest.id}`}
+              maxLength={2000}
+            />
+            <button
+              type="button"
+              onClick={handleAskMentor}
+              disabled={mentorLoading || !mentorQuestion.trim()}
+              className="rounded bg-ink-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+              data-testid={`mentor-ask-${manifest.id}`}
+            >
+              {mentorLoading ? '…' : 'Ask'}
+            </button>
+          </div>
+          {mentorAnswer && (
+            <div
+              className="mt-2 rounded bg-white p-2 text-xs"
+              data-testid={`mentor-answer-${manifest.id}`}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                    mentorAnswer.diagnosis_state === 'confirmed'
+                      ? 'bg-green-50 text-green-800'
+                      : mentorAnswer.diagnosis_state === 'likely'
+                        ? 'bg-amber-50 text-amber-800'
+                        : 'bg-ink-50 text-ink-900/70'
+                  }`}
+                >
+                  {mentorAnswer.diagnosis_state}
+                </span>
+                <span className="text-[10px] text-ink-900/50">
+                  provider: {mentorAnswer.provider_mode}
+                </span>
+              </div>
+              <p className="mt-1 text-ink-900/80">{mentorAnswer.answer}</p>
+              {mentorAnswer.next_checks.length > 0 && (
+                <div className="mt-2">
+                  <div className="text-[10px] font-medium text-ink-900/70">
+                    Next checks:
+                  </div>
+                  <ul className="mt-0.5 list-disc pl-4 text-ink-900/70">
+                    {mentorAnswer.next_checks.map((c, i) => (
+                      <li key={i}>{c}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -413,17 +561,28 @@ function StepVerdictView({ verdict, idx }: { verdict: StepVerdict; idx: number }
   );
 }
 
-function parseInputs(text: string): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  // Allow comma-separated key:value pairs OR JSON.
-  if (text.trim().startsWith('{')) {
+function parseInputs(
+  text: string,
+  format: 'text' | 'json' = 'text',
+): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  if (!trimmed) return {};
+
+  if (format === 'json') {
     try {
-      return JSON.parse(text);
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        return null;
+      }
+      return parsed as Record<string, unknown>;
     } catch {
-      // fall through
+      return null;
     }
   }
-  for (const pair of text.split(',').map((s) => s.trim())) {
+
+  // Text mode: comma-separated key:value pairs.
+  const out: Record<string, unknown> = {};
+  for (const pair of trimmed.split(',').map((s) => s.trim())) {
     if (!pair) continue;
     const [k, ...rest] = pair.split(':');
     if (!k || rest.length === 0) continue;

@@ -1,5 +1,5 @@
 id: interactive-explorer
-version: 1.0.0
+version: 1.1.0
 module_id: graph
 level: beginner
 estimated_minutes: 25
@@ -22,6 +22,9 @@ steps:
     operation_key: seed_graph
     input_schema_ref: seed_graph_v1
     validator_key: seed_five_nodes_v1
+    inputs:
+      dataset_id: e03
+      fixture_key: mixed-kind-v1
     expected:
       node_count: 6
       edge_count: 5
@@ -31,6 +34,9 @@ steps:
     operation_key: filter_by_kind
     input_schema_ref: filter_by_kind_v1
     validator_key: filter_by_kind_v1
+    inputs:
+      dataset_id: e03
+      kinds: [skill]
     expected:
       matched_node_refs: [SKILL1, SKILL2]
   - id: filter_apps
@@ -39,6 +45,9 @@ steps:
     operation_key: filter_by_kind
     input_schema_ref: filter_by_kind_v1
     validator_key: filter_by_kind_v1
+    inputs:
+      dataset_id: e03
+      kinds: [app]
     expected:
       matched_node_refs: [APP1, APP2]
   - id: reset_view
@@ -47,6 +56,9 @@ steps:
     operation_key: filter_by_kind
     input_schema_ref: filter_by_kind_v1
     validator_key: filter_by_kind_v1
+    inputs:
+      dataset_id: e03
+      kinds: []
     expected:
       matched_node_refs: [APP1, APP2, SKILL1, SKILL2, TOOL1, TOOL2]
 failure_mode: |

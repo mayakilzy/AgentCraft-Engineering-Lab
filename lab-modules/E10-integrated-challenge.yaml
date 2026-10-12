@@ -1,5 +1,5 @@
 id: integrated-challenge
-version: 1.0.0
+version: 1.1.0
 module_id: challenge
 level: advanced
 estimated_minutes: 40
@@ -7,8 +7,8 @@ title:
   en: Graph and Observability Challenge
   ar: تحدي الرسم والمراقبة
 description:
-  en: Identify the faulty dependency and its operational symptom using the graph plus the trace. Then fix the issue and verify with a rerun.
-  ar: حدّد الاعتمادية المعيبة وأعراضها التشغيلية باستخدام الرسم والتتبّع. ثم أصلح المشكلة وتحقق بإعادة التشغيل.
+  en: Identify the faulty dependency and its operational symptom using the graph plus the trace. Then fix the issue and verify with a real corrected rerun.
+  ar: حدّد الاعتمادية المعيبة وأعراضها التشغيلية باستخدام الرسم والتتبّع. ثم أصلح المشكلة وتحقق بإعادة تشغيل حقيقية.
 technology: [NetworkX, OpenTelemetry, Grafana]
 prerequisites: [critical-dependencies, trace-one-request, build-monitoring-dashboard]
 dataset_key: integrated-challenge-v1
@@ -22,46 +22,70 @@ steps:
     operation_key: seed_graph
     input_schema_ref: seed_graph_v1
     validator_key: seed_five_nodes_v1
+    inputs:
+      dataset_id: e10
+      fixture_key: integrated-challenge-v1
     expected:
       node_count: 8
       edge_count: 8
   - id: paths
     title: {en: Inspect paths, ar: افحص المسارات}
-    instruction: {en: Compute shortest paths from each app and confirm the expected topology., ar: احسب أقصر المسارات من كل تطبيق وتأكد من الهيكل المتوقع.}
+    instruction: {en: Compute the shortest path from APP1 to T3. The path identifies the critical edge (APP1→T1)., ar: احسب أقصر مسار من APP1 إلى T3. يحدد المسار الحافة الحرجة (APP1→T1).}
     operation_key: shortest_path
     input_schema_ref: shortest_path_v1
-    validator_key: integrated_challenge_v1
+    validator_key: shortest_path_directed_v1
+    inputs:
+      dataset_id: e10
+      source: APP1
+      target: T3
     expected:
-      critical_edge: [APP1, T1]
+      path: [APP1, T1, T3]
   - id: scenario
     title: {en: Execute scenario, ar: نفّذ السيناريو}
     instruction: {en: Inject a failure at the transform step and capture the trace_id., ar: أدخل عطلاً في خطوة transform والتقط trace_id.}
     operation_key: inject_failure
     input_schema_ref: inject_failure_v1
-    validator_key: integrated_challenge_v1
+    validator_key: failure_diagnosis_v1
+    inputs:
+      run_id: e10
+      fail_step: transform
     expected:
-      critical_edge: [APP1, T1]
-      failing_step: transform
+      failed_run:
+        fail_step: transform
+        trace_id_present: true
   - id: trace
     title: {en: View trace, ar: اعرض التتبّع}
-    instruction: {en: Open the observability links endpoint and locate the failing span., ar: افتح نقطة روابط المراقبة وحدّد الفترة الفاشلة.}
+    instruction: {en: Use the observability links endpoint to locate the failing span., ar: استخدم نقطة روابط المراقبة لتحديد الفترة الفاشلة.}
     operation_key: inject_failure
     input_schema_ref: inject_failure_v1
-    validator_key: integrated_challenge_v1
+    validator_key: failure_diagnosis_v1
+    inputs:
+      run_id: e10
+      fail_step: transform
     expected:
-      critical_edge: [APP1, T1]
-      failing_step: transform
+      failed_run:
+        fail_step: transform
+        trace_id_present: true
   - id: fix
     title: {en: Fix and compare, ar: أصلح وقارن}
-    instruction: {en: Disable the injection, ar: عطّل الحقن، أعد تشغيل trace_demo وتأكد من نجاح التشغيل المُصحّح.}
+    instruction: {en: Disable the injection, ar: عطّل الحقن، أعد تشغيل trace_demo وتأكد من تنفيذ التشغيل المُصحّح فعلياً ونجاحه.}
     operation_key: run_trace_demo
     input_schema_ref: trace_demo_v1
-    validator_key: integrated_challenge_v1
+    validator_key: failure_diagnosis_v1
+    inputs:
+      run_id: e10_corrected
     expected:
-      critical_edge: [APP1, T1]
-      corrected_status: ok
+      corrected_run_only: true
+      corrected_run:
+        status: ok
 failure_mode: |
   Both graph and telemetry assertions must pass for the experiment to
-  pass. A missing trace_id on the failed run, or a wrong critical-edge
-  identification, fails the validator honestly. The report must be
-  exported (md/json) to demonstrate the diagnosis trail.
+  pass. The shortest path (step 2) identifies the critical edge
+  (APP1→T1→T3). The inject_failure steps (3-4) verify the failed run
+  has a populated trace_id (ADR-0003 step 5). The corrected rerun
+  (step 5) verifies the corrected case actually passes.
+
+  G06-PRE-02: the corrected rerun (step 5) is now a REAL operation, not
+  a fabricated placeholder. If the corrected rerun step fails, the
+  validator on that step fails honestly with `corrected_status=failed
+  != expected ok`, and the run as a whole ends with status=FAILED.

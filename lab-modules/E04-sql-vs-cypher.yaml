@@ -1,5 +1,5 @@
 id: sql-vs-cypher
-version: 1.0.0
+version: 1.1.0
 module_id: parity
 level: intermediate
 estimated_minutes: 25
@@ -22,6 +22,9 @@ steps:
     operation_key: seed_graph
     input_schema_ref: seed_graph_v1
     validator_key: seed_five_nodes_v1
+    inputs:
+      dataset_id: e04
+      fixture_key: parity-v1
     expected:
       node_count: 4
       edge_count: 4
@@ -31,6 +34,10 @@ steps:
     operation_key: parity_run
     input_schema_ref: parity_v1
     validator_key: parity_v1
+    inputs:
+      dataset_id: e04
+      query_key: app_uses_tool_direct
+      iterations: 1
     expected:
       query_key: app_uses_tool_direct
       equal: true
@@ -40,6 +47,10 @@ steps:
     operation_key: parity_run
     input_schema_ref: parity_v1
     validator_key: parity_v1
+    inputs:
+      dataset_id: e04
+      query_key: app_uses_tool_direct
+      iterations: 1
     expected:
       query_key: app_uses_tool_direct
       equal: true
@@ -49,6 +60,10 @@ steps:
     operation_key: parity_run
     input_schema_ref: parity_v1
     validator_key: parity_v1
+    inputs:
+      dataset_id: e04
+      query_key: app_uses_tool_direct
+      iterations: 1
     expected:
       query_key: app_uses_tool_direct
       equal: true

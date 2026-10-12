@@ -1,5 +1,5 @@
 id: critical-dependencies
-version: 1.0.0
+version: 1.1.0
 module_id: graph
 level: intermediate
 estimated_minutes: 25
@@ -22,6 +22,9 @@ steps:
     operation_key: seed_graph
     input_schema_ref: seed_graph_v1
     validator_key: seed_five_nodes_v1
+    inputs:
+      dataset_id: e05
+      fixture_key: dependency-impact-v1
     expected:
       node_count: 5
       edge_count: 5
@@ -31,6 +34,9 @@ steps:
     operation_key: critical_dep_analysis
     input_schema_ref: critical_dep_v1
     validator_key: critical_dep_v1
+    inputs:
+      dataset_id: e05
+      target: T1
     expected:
       target: T1
       impact_set: [T3]
@@ -40,6 +46,9 @@ steps:
     operation_key: critical_dep_analysis
     input_schema_ref: critical_dep_v1
     validator_key: critical_dep_v1
+    inputs:
+      dataset_id: e05
+      target: T1
     expected:
       target: T1
       impact_set: [T3]
@@ -49,6 +58,9 @@ steps:
     operation_key: critical_dep_analysis
     input_schema_ref: critical_dep_v1
     validator_key: critical_dep_v1
+    inputs:
+      dataset_id: e05
+      target: T1
     expected:
       target: T1
       impact_set: [T3]

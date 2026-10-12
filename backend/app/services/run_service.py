@@ -110,6 +110,23 @@ def create_and_execute_run(
     Per ADR-0003 step 1: trace_id is captured from the current OTEL span.
     The whole run is wrapped in a tracer span named "lab.run" so the
     run_id is attached to every nested operation span.
+
+    G06-PRE-01: each step may declare its own `inputs` block in the
+    manifest. The runner merges them on top of the run-level inputs
+    (step-level wins) before invoking the operation handler. This lets
+    a multi-step experiment use the same operation with different
+    parameters (e.g., E02's shortest_path with two different source/
+    target pairs) without requiring the API caller to know the manifest.
+
+    G06-PRE-02: the previous `_wrap_inject_failure_outputs` helper
+    fabricated a `corrected_run.status="ok"` placeholder whenever an
+    `inject_failure` operation was invoked. This was dishonest — the
+    corrected rerun never actually ran. We now execute the corrected
+    step as a real operation (the manifest's "rerun" step uses
+    `run_trace_demo` with no `fail_step` input) and the validator reads
+    the actual operation outputs. The `inject_failure` validator now
+    sees the failed step's outputs directly (failed_step + status +
+    trace_id) without a wrapper.
     """
     if mode not in ("guided", "challenge"):
         raise InvalidStateError(
@@ -163,7 +180,8 @@ def create_and_execute_run(
             validator_key = step["validator_key"]
             expected = step.get("expected", {})
 
-            # Build per-step inputs from the run-level inputs + the manifest.
+            # G06-PRE-01: build per-step inputs from run-level + step-level.
+            # step.inputs (from the manifest) takes priority on key conflicts.
             step_inputs = _build_step_inputs(step, inputs)
 
             # Run the operation handler.
@@ -179,22 +197,47 @@ def create_and_execute_run(
                 )
 
             # Run the validator. The expected block from the manifest
-            # is augmented with the run_id so E07/E09 validators can
-            # assert trace_id presence.
+            # is augmented with the run_id + trace_id so E07/E09 validators
+            # can assert trace_id presence (ADR-0003 steps 4 + 5).
+            #
+            # G06-PRE-02: we no longer fabricate a `corrected_run`
+            # placeholder. The validator sees the operation's actual
+            # outputs. For E09 inject_failure steps, the validator
+            # `failure_diagnosis_v1` reads `fail_step`, `status`, and
+            # `trace_id` directly from `outputs`. The corrected rerun is
+            # a separate step in the manifest that uses `run_trace_demo`
+            # without `fail_step`; its validator reads `status: ok` from
+            # that step's actual outputs.
             val_kwargs_expected = dict(expected)
-            # Pass the persisted run_id + trace_id into the validator's
-            # outputs so ADR-0003 steps 4 + 5 are testable end-to-end.
             augmented_outputs = dict(op_result.outputs or {})
             augmented_outputs["run_trace_id"] = trace_id
             augmented_outputs["run_id"] = str(run_id)
-            # For E09 inject_failure: the validator expects failed_run/
-            # corrected_run blocks. When the operation was inject_failure,
-            # we wrap the result + a placeholder for the corrected run so
-            # the validator's expected shape matches.
+            # G06-PRE-02: surface the operation's own status so the
+            # failure_diagnosis_v1 validator (Shape B — corrected_run_only)
+            # can read `outputs.status` to verify the corrected rerun
+            # actually passed. The OperationResult.status is the
+            # authoritative operation outcome; the outputs dict may not
+            # carry it (e.g., run_trace_demo doesn't add a `status` key
+            # to its outputs).
+            augmented_outputs["status"] = op_result.status
+            # For inject_failure steps: surface the failed step + status
+            # + trace_id at the top level so the validator can read them
+            # without a wrapper. The validator's expected shape is:
+            #   {failed_run: {fail_step, status, trace_id}, corrected_run: {status}}
+            # When this is an inject_failure step, the manifest's
+            # validator (failure_diagnosis_v1) is invoked on the
+            # single-step outputs; the "corrected_run" block is supplied
+            # by the manifest's NEXT step (the rerun). The validator on
+            # the inject_failure step itself only checks the failed_run
+            # block, so we synthesize a minimal failed_run view from
+            # the operation outputs.
             if operation_key == "inject_failure":
-                augmented_outputs = _wrap_inject_failure_outputs(
-                    augmented_outputs, op_result, trace_id
-                )
+                augmented_outputs["failed_run"] = {
+                    "fail_step": augmented_outputs.get("fail_step"),
+                    "status": op_result.status,
+                    "trace_id": trace_id,
+                    "error_code": op_result.error_code,
+                }
 
             try:
                 validator = get_validator(validator_key)
@@ -226,6 +269,10 @@ def create_and_execute_run(
                     "validator_message": verdict.message,
                     "expected": verdict.expected,
                     "actual": verdict.actual,
+                    # G06-PRE-01: record the effective inputs (after merge)
+                    # so the diagnostic trail shows what the operation
+                    # actually received. Redacted at rest (no secrets).
+                    "effective_inputs": _redact_inputs(step_inputs),
                 },
             )
             db.add(event)
@@ -244,17 +291,37 @@ def create_and_execute_run(
 
             last_outputs = augmented_outputs
 
-            # State transition: a step that fails OR is blocked propagates
-            # to the run. We continue executing remaining steps so the user
-            # sees the full diagnostic trail, but the final status is
-            # FAILED or BLOCKED.
+            # G06-PRE-03 state transition: the run's final status is
+            # determined by the VALIDATOR verdicts, NOT the operation
+            # statuses. This preserves the distinction between:
+            #   - an educational experiment that includes an INTENTIONAL
+            #     failure (e.g., E09 inject_failure) — the operation
+            #     status is "failed" but the validator passes because
+            #     the failure was expected; the run stays PASSED.
+            #   - a real failure (validator fails) — the run is FAILED.
+            #   - a missing service (operation is BLOCKED) — the run is
+            #     BLOCKED, which takes priority over FAILED.
+            #
+            # The op_result.status is still recorded in the RunEvent for
+            # diagnostic purposes; it just doesn't drive the run status
+            # directly.
             if op_result.status == "blocked":
-                final_status = "BLOCKED" if final_status == "PASSED" else final_status
+                # G06-PRE-03: BLOCKED has priority over FAILED — a missing
+                # service is an environmental condition, not a logic error.
+                # The first BLOCKED step sets the run status; subsequent
+                # FAILED steps don't downgrade it back.
+                if final_status == "PASSED":
+                    final_status = "BLOCKED"
                 error_code = error_code or op_result.error_code
-            elif not verdict.passed or op_result.status == "failed":
+            elif not verdict.passed:
+                # Validator failed — this is a real failure, not an
+                # intentional one. The run is FAILED.
                 if final_status == "PASSED":
                     final_status = "FAILED"
                     error_code = op_result.error_code or "validation_failed"
+            # If verdict.passed is True, the step passes regardless of
+            # op_result.status (the operation may have "failed" by design,
+            # but the validator confirmed the expected outcome).
 
         # Finalize the run.
         run.status = final_status
@@ -268,6 +335,18 @@ def create_and_execute_run(
         }
         run.error_code = error_code
         db.commit()
+
+        # G06-PRE-03: record the run outcome in the Prometheus metrics
+        # registry so the E08 validator (metrics_demo_v1) can see nonzero
+        # lab_runs_total. The labels are bounded (operation, status) —
+        # no PII, no run_id, no session_id.
+        try:
+            from app.core.metrics import record_lab_run
+            record_lab_run(operation=experiment_id, status=final_status)
+        except Exception:
+            # Metrics recording is best-effort; don't fail the run if
+            # the metrics registry is unavailable.
+            pass
 
         return RunOutcome(
             run_id=run_id,
@@ -332,9 +411,14 @@ def reset_run(
     Per the contract §2 + §5: reset does NOT mutate the prior terminal
     run. Instead, it:
     1. Looks up the run (session-scoped — 404 on cross-session).
-    2. Reads the run's inputs to find the `dataset_id` (the user-chosen
-       scope name under which the fixture was seeded).
-    3. Deletes all graph_nodes + graph_edges for that (session, dataset_id).
+    2. Collects the dataset_ids that were actually used by the run's
+       steps. G06-PRE-01: each step may have its own `inputs.dataset_id`
+       (merged on top of run-level inputs), so the reset must look at
+       the effective per-step inputs stored in RunEvents, not just the
+       run-level inputs_json. This ensures we delete the graph rows
+       that were actually seeded, even when the user passed a different
+       dataset_id at the run level (which was overridden by step.inputs).
+    3. Deletes all graph_nodes + graph_edges for each (session, dataset_id).
     4. Records a reset event (audit trail).
     5. Returns the reset record so the user can start fresh.
     """
@@ -344,37 +428,57 @@ def reset_run(
     if run.session_id != session.id:
         raise NotFoundError(f"run not found: {run_id}")
 
-    # The dataset_id the user chose when creating the run (the scope
-    # under which the graph rows were stored). Falls back to the
-    # manifest's dataset_key when the run inputs don't carry a dataset_id
-    # (e.g., for observability experiments that don't seed graph data).
-    inputs = run.inputs_json or {}
-    dataset_id = inputs.get("dataset_id")
-    if not dataset_id:
-        exp = _get_experiment(db, run.experiment_id)
-        if exp is None:
-            raise NotFoundError(f"experiment not found: {run.experiment_id}")
-        manifest = _decode_manifest(exp)
-        dataset_id = manifest.get("dataset_key")
+    # G06-PRE-01: collect the dataset_ids that were ACTUALLY used by the
+    # run's steps. Each RunEvent's record_json carries `effective_inputs`
+    # (the merged run-level + step-level inputs). We read those to find
+    # all dataset_ids that may have seeded graph rows.
+    events = db.execute(
+        select(RunEvent).where(RunEvent.run_id == run.id)
+    ).scalars().all()
+    dataset_ids: set[str] = set()
+    for ev in events:
+        rec = ev.record_json or {}
+        eff = rec.get("effective_inputs") or {}
+        ds = eff.get("dataset_id")
+        if ds:
+            dataset_ids.add(str(ds))
 
-    # Delete graph rows for this (session, dataset_id).
+    # Also consider the run-level inputs_json (for runs created before
+    # G06-PRE-01 that don't have effective_inputs in their events).
+    run_inputs = run.inputs_json or {}
+    if run_inputs.get("dataset_id"):
+        dataset_ids.add(str(run_inputs["dataset_id"]))
+
+    # Fallback: the manifest's dataset_key when no dataset_id is found
+    # (e.g., for observability experiments that don't seed graph data).
+    if not dataset_ids:
+        exp = _get_experiment(db, run.experiment_id)
+        if exp is not None:
+            manifest = _decode_manifest(exp)
+            dk = manifest.get("dataset_key")
+            if dk:
+                dataset_ids.add(str(dk))
+
+    # Delete graph rows for each (session, dataset_id) used.
     deleted_nodes: list[GraphNode] = []
     deleted_edges: list[GraphEdge] = []
-    if dataset_id:
-        deleted_nodes = db.execute(
+    for ds_id in dataset_ids:
+        nodes = db.execute(
             select(GraphNode)
             .where(GraphNode.session_id == session.id)
-            .where(GraphNode.dataset_id == dataset_id)
+            .where(GraphNode.dataset_id == ds_id)
         ).scalars().all()
-        for n in deleted_nodes:
+        for n in nodes:
             db.delete(n)
-        deleted_edges = db.execute(
+        deleted_nodes.extend(nodes)
+        edges = db.execute(
             select(GraphEdge)
             .where(GraphEdge.session_id == session.id)
-            .where(GraphEdge.dataset_id == dataset_id)
+            .where(GraphEdge.dataset_id == ds_id)
         ).scalars().all()
-        for e in deleted_edges:
+        for e in edges:
             db.delete(e)
+        deleted_edges.extend(edges)
 
     # Audit record: a RunEvent on the original run with step="reset".
     reset_event = RunEvent(
@@ -384,7 +488,7 @@ def reset_run(
         record_json={
             "deleted_nodes": len(deleted_nodes),
             "deleted_edges": len(deleted_edges),
-            "dataset_id": dataset_id,
+            "dataset_ids": sorted(dataset_ids),
             "timestamp": _now().isoformat(),
         },
     )
@@ -394,7 +498,13 @@ def reset_run(
     return {
         "run_id": str(run.id),
         "experiment_id": run.experiment_id,
-        "dataset_id": dataset_id,
+        # G06-PRE-01: return the list of dataset_ids that were reset
+        # (a run may have used multiple datasets across its steps).
+        "dataset_ids": sorted(dataset_ids),
+        # Keep the singular field for backwards compatibility with the
+        # G05 API schema (the API returns a single dataset_id; we send
+        # the first one or the manifest's dataset_key).
+        "dataset_id": sorted(dataset_ids)[0] if dataset_ids else None,
         "deleted_nodes": len(deleted_nodes),
         "deleted_edges": len(deleted_edges),
         "reset_event_id": str(reset_event.id),
@@ -652,55 +762,31 @@ def _truncate_outputs(outputs: Dict[str, Any], max_bytes: int) -> Dict[str, Any]
 
 
 def _build_step_inputs(step: dict, run_inputs: Dict[str, Any]) -> Dict[str, Any]:
-    """Build the inputs dict for a single step from the run-level inputs.
+    """Build the inputs dict for a single step.
 
-    Convention: the run-level inputs are a flat dict; each step's required
-    inputs are looked up by key. For experiments that need per-step
-    customization (e.g. E02 has steps that share dataset_id but differ in
-    source/target), the manifest's `expected` block lists the keys the
-    operation needs. The caller supplies them at run time.
+    G06-PRE-01: effective inputs are computed by merging the run-level
+    inputs with the step-level `inputs` block (when present in the
+    manifest). Step-level inputs take priority on key conflicts:
+        effective_inputs = {**run_inputs, **step.inputs}
 
-    For G05 V1 we accept that the run-level inputs are sufficient: the
-    caller passes dataset_id, source, target, etc. as needed; each step
-    receives the full inputs dict. The operation handler is responsible
-    for picking out the keys it needs.
+    The merge is read-only: the original `run_inputs` dict is NOT
+    mutated. The result is a fresh dict per step.
+
+    Security: the loader has already rejected `step.inputs` that contain
+    security-critical keys (run_id, session_id, cookie_token, id). This
+    function trusts that pre-check and does not re-verify it — but it
+    does NOT mutate `run_inputs` either, so a step's override cannot
+    leak back into the run-level record.
+
+    Backwards compatibility: when `step.inputs` is absent (the G05
+    manifest format), the function returns a copy of `run_inputs` —
+    identical to the G05 behaviour.
     """
-    return dict(run_inputs)
-
-
-def _wrap_inject_failure_outputs(
-    augmented_outputs: Dict[str, Any],
-    op_result: OperationResult,
-    trace_id: Optional[str],
-) -> Dict[str, Any]:
-    """Wrap the inject_failure operation result into the shape the
-    failure_diagnosis_v1 validator expects:
-        {
-          "failed_run": {fail_step, status, trace_id},
-          "corrected_run": {status: "ok" if trace_id is set else "unknown"}
-        }
-
-    The validator asserts both the failed run failed at the expected step
-    AND that the failed run has a non-null trace_id (ADR-0003 step 5). The
-    `corrected_run` block is a placeholder — the actual corrected rerun
-    is a separate run with operation_key=run_trace_demo.
-    """
-    fail_step = augmented_outputs.get("fail_step")
-    return {
-        "failed_run": {
-            "fail_step": fail_step,
-            "status": op_result.status,
-            "trace_id": trace_id,
-            "error_code": op_result.error_code,
-        },
-        "corrected_run": {
-            "status": "ok" if trace_id else "unknown",
-        },
-        # Keep the original spans etc. for the report.
-        "spans": augmented_outputs.get("spans"),
-        "span_count": augmented_outputs.get("span_count"),
-        "run_trace_id": trace_id,
-    }
+    merged = dict(run_inputs)
+    step_inputs = step.get("inputs")
+    if step_inputs and isinstance(step_inputs, dict):
+        merged.update(step_inputs)
+    return merged
 
 
 def _serialize_run(run: Run) -> dict:

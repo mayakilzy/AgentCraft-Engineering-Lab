@@ -87,7 +87,12 @@
     "runStarted": "Run started…",
     "runCreated": "Run created",
     "showAllSteps": "Show all steps",
-    "hideSteps": "Hide steps"
+    "hideSteps": "Hide steps",
+    "textMode": "Text",
+    "jsonMode": "JSON",
+    "invalidJson": "Invalid JSON — check syntax",
+    "invalidText": "Invalid inputs — use key:value pairs",
+    "servicesNotConfigured": "Grafana/Tempo not configured in this environment. trace_id is populated; the deep-link will be available after G07 deployment."
   },
   "history": {
     "title": "Run History",

@@ -271,21 +271,29 @@ def validate_metrics_demo(
     outputs: Dict[str, Any],
     expected: Dict[str, Any],
 ) -> ValidationResult:
-    """E08 validator: nonzero request count + bounded latency + error rate.
-    The validator checks the metrics summary returned by the operation.
+    """E08 validator: nonzero request count + bounded latency.
+
+    G06-PRE-03: the `lab_runs_total >= 1` check is OPTIONAL. During a
+    run's own execution, lab_runs_total is 0 because the run hasn't
+    been counted yet (record_lab_run is called at run finalization,
+    AFTER all steps). The validator would always fail during the run
+    itself if we required lab_runs_total >= 1. The check is now gated
+    by `expected.require_lab_runs` (default false) so callers who want
+    to verify post-run that lab_runs_total is nonzero can opt in.
     """
     http_total = outputs.get("http_requests_total", 0)
     p95 = outputs.get("http_request_duration_seconds_p95")
     lab_total = outputs.get("lab_runs_total", 0)
     min_requests = expected.get("min_http_requests", 1)
     max_p95 = expected.get("max_p95_seconds", 10.0)
+    require_lab_runs = expected.get("require_lab_runs", False)
 
     problems = []
     if http_total < min_requests:
         problems.append(f"http_requests_total {http_total} < {min_requests}")
     if p95 is not None and p95 > max_p95:
         problems.append(f"p95 latency {p95}s > {max_p95}s bound")
-    if lab_total < 1:
+    if require_lab_runs and lab_total < 1:
         problems.append("lab_runs_total is zero")
 
     passed = not problems
@@ -323,7 +331,40 @@ def validate_failure_diagnosis(
     `failed_run.trace_id_present: false` for backwards compatibility with
     the G04 tests.
 
-    Expected shape:
+    G06-PRE-02: the validator now supports TWO call shapes:
+
+    Shape A — failed-run step (operation_key=inject_failure):
+        The validator checks the `failed_run` block that the runner
+        synthesizes from the operation's outputs. The `corrected_run`
+        block is OPTIONAL here — when absent, the validator skips the
+        corrected-run check. This is the typical case: the corrected
+        rerun is a SEPARATE step in the manifest, not the same step.
+
+    Shape B — corrected-rerun step (operation_key=run_trace_demo,
+    no fail_step):
+        The validator sees operation outputs WITHOUT a `failed_run`
+        block. When `expected.corrected_run_only: true`, the validator
+        checks only that the operation status is `ok` (i.e., the
+        corrected rerun actually passed). This is the "fix and compare"
+        step of E09.
+
+    Shape C — combined (legacy G05 contract):
+        Both `failed_run` and `corrected_run` are present. The validator
+        checks both. This is the original G05 shape, kept for backwards
+        compatibility with the G04-era tests.
+
+    Expected shape (Shape A — failed-run step):
+        expected = {
+            "failed_run": {"fail_step": "transform", "trace_id_present": true},
+        }
+
+    Expected shape (Shape B — corrected-rerun step):
+        expected = {
+            "corrected_run_only": true,
+            "corrected_run": {"status": "ok"},
+        }
+
+    Expected shape (Shape C — combined):
         expected = {
             "failed_run": {"fail_step": "transform", "trace_id_present": true},
             "corrected_run": {"status": "ok"},
@@ -336,20 +377,41 @@ def validate_failure_diagnosis(
     corrected_status = corrected.get("status")
     require_failed_trace_id = expected.get("failed_run", {}).get("trace_id_present", True)
     failed_trace_id = failed.get("trace_id")
+    corrected_run_only = expected.get("corrected_run_only", False)
 
     problems = []
-    if actual_fail != expected_fail:
-        problems.append(
-            f"failed_run.fail_step={actual_fail} != expected {expected_fail}"
-        )
-    if failed.get("status") != "failed":
-        problems.append("failed_run.status is not 'failed'")
-    if corrected_status != "ok":
-        problems.append(f"corrected_run.status={corrected_status} != 'ok'")
-    if require_failed_trace_id and not failed_trace_id:
-        problems.append(
-            "failed_run.trace_id is None — user cannot locate the failing span in Grafana"
-        )
+
+    if corrected_run_only:
+        # Shape B — corrected-rerun step. The "operation status" comes
+        # from the operation's own `status` field (the runner passes it
+        # through to the validator via `outputs.status`).
+        op_status = outputs.get("status", "ok")
+        expected_corrected_status = expected.get("corrected_run", {}).get("status", "ok")
+        if op_status != expected_corrected_status:
+            problems.append(
+                f"corrected rerun status={op_status} != expected {expected_corrected_status}"
+            )
+    else:
+        # Shape A or C — there must be a failed_run block.
+        if not failed:
+            problems.append("failed_run block missing")
+        else:
+            if actual_fail != expected_fail:
+                problems.append(
+                    f"failed_run.fail_step={actual_fail} != expected {expected_fail}"
+                )
+            if failed.get("status") != "failed":
+                problems.append("failed_run.status is not 'failed'")
+            if require_failed_trace_id and not failed_trace_id:
+                problems.append(
+                    "failed_run.trace_id is None — user cannot locate the failing span in Grafana"
+                )
+        # Shape C — also check the corrected run when present in expected.
+        if expected.get("corrected_run"):
+            if corrected_status != expected.get("corrected_run", {}).get("status", "ok"):
+                problems.append(
+                    f"corrected_run.status={corrected_status} != 'ok'"
+                )
 
     passed = not problems
     return ValidationResult(
@@ -360,19 +422,26 @@ def validate_failure_diagnosis(
                 "fail_step": expected_fail,
                 "status": "failed",
                 "trace_id_present": require_failed_trace_id,
-            },
-            "corrected_run": {"status": "ok"},
+            } if not corrected_run_only else None,
+            "corrected_run": expected.get("corrected_run"),
+            "corrected_run_only": corrected_run_only,
         },
         actual={
             "failed_run": {
                 "fail_step": actual_fail,
                 "status": failed.get("status"),
                 "trace_id": failed_trace_id,
-            },
+            } if failed else None,
             "corrected_run": {"status": corrected_status},
+            "operation_status": outputs.get("status"),
         },
         message=(
-            "diagnosis matches injected fail_step + corrected rerun passes + trace_id present"
+            (
+                "corrected rerun passed"
+                if corrected_run_only
+                else "diagnosis matches injected fail_step + trace_id present"
+                + (" + corrected rerun passes" if expected.get("corrected_run") else "")
+            )
             if passed
             else "; ".join(problems)
         ),
