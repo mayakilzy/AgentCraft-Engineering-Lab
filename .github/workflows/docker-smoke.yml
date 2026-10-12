@@ -85,26 +85,53 @@ jobs:
       # ======== C2-1 + C2-5: Run integration smoke (first pass) ========
       - name: Run integration smoke (first pass)
         run: |
-          # C2-1: the test-runner is a SEPARATE container with pytest +
-          # the smoke script. It connects to the private network.
-          # C2-5: any failure in smoke.sh exits 1 → this step fails →
-          # the workflow fails.
           docker compose run --rm --no-deps test-runner
 
-      # ======== C2-2: Persistence test (restart from HOST) ========
-      - name: Create session for persistence test
+      # ======== C3-2 + C3-3: Persistence test (restart from HOST) ========
+      # C3-2: create a session, extract the cookie to the HOST, restart
+      # the API from the host, then use the SAME cookie to verify the
+      # session persisted. No new session created for verification.
+      # C3-3: no || true — failure to create the session fails the step.
+      - name: Create session + extract cookie to host
+        id: create-session
         run: |
-          # Create a session via the test-runner (one-shot).
-          docker compose run --rm --no-deps test-runner bash -c '
-            curl -sf -X POST http://web:80/api/v1/sessions/guest \
+          # C3-2 + C3-3: create a session, extract the cookie token to
+          # the host. No || true — failure to create fails the step.
+          # We use a single POST request and extract the cookie from
+          # the Set-Cookie header in ONE pass.
+          COOKIE_VALUE=$(docker compose run --rm --no-deps test-runner bash -c '
+            # Single POST request + capture headers.
+            curl -s -D /tmp/headers -o /tmp/body -X POST http://web:80/api/v1/sessions/guest \
               -H "Content-Type: application/json" \
-              -d "{\"locale\":\"en\"}" -c /tmp/persist-cookies.txt
-            # Save the cookie for the next run.
-            cat /tmp/persist-cookies.txt
-          ' > /tmp/session-cookie.txt 2>&1 || true
-          echo "Session created for persistence test"
+              -d "{\"locale\":\"en\"}" 2>/dev/null
 
-      - name: Restart API from host (C2-2)
+            # Check the body is non-empty (session was created).
+            BODY=$(cat /tmp/body 2>/dev/null || echo "")
+            if [ -z "$BODY" ]; then
+              echo "ERROR: empty response body" >&2
+              exit 1
+            fi
+
+            # Extract cookie token from Set-Cookie header.
+            COOKIE=$(cat /tmp/headers | grep -i set-cookie | \
+              sed "s/.*ac_guest=//;s/;.*//" | tr -d "\r\n")
+            if [ -z "$COOKIE" ]; then
+              echo "ERROR: no ac_guest cookie in Set-Cookie header" >&2
+              exit 1
+            fi
+
+            # Print the cookie token to stdout (captured by the host).
+            echo -n "$COOKIE"
+          ')
+          RC=$?
+          if [ $RC -ne 0 ] || [ -z "$COOKIE_VALUE" ]; then
+            echo "FAIL: could not create session or extract cookie"
+            exit 1
+          fi
+          echo "Cookie extracted: ${COOKIE_VALUE:0:16}..."
+          echo "COOKIE_VALUE=$COOKIE_VALUE" >> $GITHUB_ENV
+
+      - name: Restart API from host (C3-2)
         run: |
           echo "Restarting API container from host..."
           docker compose restart api
@@ -112,73 +139,97 @@ jobs:
           timeout 60 bash -c 'until docker compose ps api | grep -i healthy; do sleep 2; done'
           echo "API is healthy after restart"
 
-      - name: Verify persistence after restart
+      - name: Verify persistence using SAME cookie (C3-2 + C3-4)
         run: |
-          # C2-2: verify the session created before the restart still
-          # works (data is in PostgreSQL, not in the API container).
-          # We create a NEW session after restart + verify it works,
-          # which proves the API is connected to the SAME PostgreSQL
-          # instance with the data intact.
+          # C3-2: use the SAME cookie from before the restart (not a
+          # new session). The session data is in PostgreSQL.
+          # C3-4: if the cookie is missing, this is a FAILURE, not a
+          # skip.
+          if [ -z "$COOKIE_VALUE" ]; then
+            echo "FAIL: no cookie value from previous step"
+            exit 1
+          fi
+
+          # Verify the SAME session works after the restart.
           docker compose run --rm --no-deps test-runner bash -c '
-            # Create a new session + verify it works.
-            RESULT=$(curl -sf -X POST http://web:80/api/v1/sessions/guest \
-              -H "Content-Type: application/json" \
-              -d "{\"locale\":\"en\"}")
-            SESSION_ID=$(echo "$RESULT" | python -c "import json,sys; print(json.load(sys.stdin)[\"session_id\"])" 2>/dev/null)
-            if [ -z "$SESSION_ID" ]; then
-              echo "FAIL: could not create session after API restart"
+            # Use the cookie from the environment.
+            COOKIE="$1"
+            if [ -z "$COOKIE" ]; then
+              echo "FAIL: cookie not passed to container"
               exit 1
             fi
-            echo "OK: session created after restart (id=$SESSION_ID)"
 
             # Verify the session is usable.
             ME=$(curl -sf http://web:80/api/v1/sessions/me \
-              -H "Cookie: ac_guest=$(echo $RESULT | python -c \"import json,sys; print(json.load(sys.stdin)[\\\"session_id\\\"])\")" 2>/dev/null || echo "")
+              -H "Cookie: ac_guest=$COOKIE" 2>/dev/null || echo "")
             if [ -z "$ME" ]; then
-              echo "FAIL: session not usable after restart"
+              echo "FAIL: session not usable after restart (cookie=$COOKIE)"
               exit 1
             fi
-            echo "OK: session usable after restart"
+            echo "OK: SAME session usable after API restart"
 
             # Verify experiments are still loaded (manifests persisted).
-            COUNT=$(curl -sf http://web:80/api/v1/experiments | python -c "import json,sys; print(json.load(sys.stdin)[\"count\"])" 2>/dev/null || echo "0")
+            COUNT=$(curl -sf http://web:80/api/v1/experiments \
+              -H "Cookie: ac_guest=$COOKIE" 2>/dev/null | \
+              python -c "import json,sys; print(json.load(sys.stdin)[\"count\"])" 2>/dev/null || echo "0")
             if [ "$COUNT" != "10" ]; then
               echo "FAIL: expected 10 experiments after restart, got $COUNT"
               exit 1
             fi
             echo "OK: 10 experiments loaded after restart (manifests persisted)"
-          '
+          ' -- "$COOKIE_VALUE"
 
-      # ======== C2-4: Cookie Secure flag verification ========
-      - name: Verify cookie Secure flag (production mode)
+      # ======== C3-5: Cookie flags from actual POST response ========
+      - name: Verify cookie flags from actual POST (C3-5)
         run: |
-          # C2-4: the API runs with SESSION_COOKIE_SECURE=true in
-          # production. We verify the Set-Cookie header contains the
-          # Secure flag by making a request via the test-runner.
+          # C3-5: test Secure, HttpOnly, SameSite from the actual
+          # POST response's Set-Cookie header. The HTTPS transport
+          # test (does the browser actually send the cookie over
+          # HTTPS?) is separate and deferred to real deployment.
           docker compose run --rm --no-deps test-runner bash -c '
-            HEADER=$(curl -sI -X POST http://web:80/api/v1/sessions/guest \
+            # Make the actual POST request + capture response headers.
+            curl -s -D /tmp/headers -o /dev/null -X POST http://web:80/api/v1/sessions/guest \
               -H "Content-Type: application/json" \
-              -d "{\"locale\":\"en\"}" 2>/dev/null | grep -i set-cookie || echo "")
+              -d "{\"locale\":\"en\"}" 2>/dev/null
+
+            HEADER=$(cat /tmp/headers | grep -i set-cookie || echo "")
+            if [ -z "$HEADER" ]; then
+              echo "FAIL: no Set-Cookie header in response"
+              exit 1
+            fi
+            echo "Set-Cookie header: $HEADER"
+
+            # Check HttpOnly.
             if echo "$HEADER" | grep -qi "HttpOnly"; then
               echo "OK: HttpOnly flag present"
             else
               echo "FAIL: HttpOnly flag missing"
               exit 1
             fi
+
+            # Check SameSite.
             if echo "$HEADER" | grep -qi "SameSite"; then
               echo "OK: SameSite flag present"
             else
               echo "FAIL: SameSite flag missing"
               exit 1
             fi
-            # The Secure flag should be present because
-            # SESSION_COOKIE_SECURE=true is set in the .env file.
+
+            # Check Secure (present because SESSION_COOKIE_SECURE=true).
             if echo "$HEADER" | grep -qi "Secure"; then
               echo "OK: Secure flag present (production mode)"
             else
               echo "FAIL: Secure flag missing (expected because SESSION_COOKIE_SECURE=true)"
               exit 1
             fi
+
+            # C3-5 note: the Secure flag means the browser will NOT send
+            # this cookie over HTTP. The test above verifies the flag is
+            # PRESENT in the Set-Cookie header (the server sets it
+            # correctly). The actual HTTPS transport test (does the
+            # browser send the cookie over HTTPS?) is deferred to a
+            # real HTTPS deployment.
+            echo "NOTE: HTTPS transport test deferred to real deployment"
           '
 
       # ======== C2-5: Collect logs (always, before teardown) ========

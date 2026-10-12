@@ -88,7 +88,7 @@ fi
 echo "CHECK: PostgreSQL tables exist (migrations ran)"
 TABLE_COUNT=$(python -c "
 import psycopg2
-c = psycopg2.connect(host='$POSTGRES_HOST', port=$POSTGRES_PORT', user='agentcraft', password='$PG_PW', dbname='agentcraft')
+c = psycopg2.connect(host='$POSTGRES_HOST', port=$POSTGRES_PORT, user='agentcraft', password='$PG_PW', dbname='agentcraft')
 cur = c.cursor()
 cur.execute(\"SELECT count(*) FROM information_schema.tables WHERE table_schema='public'\")
 print(cur.fetchone()[0])
@@ -414,29 +414,11 @@ fi
 check "/metrics accessible internally (Prometheus scrape)" \
     "curl -sf $API_URL/metrics | grep -o 'agentcraft_http_requests_total' | head -1"
 
-# C2-2: persistence test.
-# The CI workflow restarts the API from the HOST. This script
-# verifies that the session created BEFORE the restart (if any)
-# still works. If this script is called after a restart, the
-# persist-cookies.txt should still be valid (the session is in
-# PostgreSQL, not in the API container's memory).
-echo "CHECK: Session persisted across API restart"
-# The CI workflow creates a session, restarts the API, then runs
-# this script. The /tmp/persist-cookies.txt may or may not exist
-# (depending on whether a restart happened before this run).
-# We create a session, save the cookie, and the CI workflow
-# will restart the API + run this script again to verify.
-if [ -f /tmp/persist-cookies.txt ]; then
-    if curl -sf "$NGINX_URL/api/v1/sessions/me" -b /tmp/persist-cookies.txt | \
-        grep -o 'session_id' >/dev/null 2>&1; then
-        echo "  → OK (session from before restart still works)"
-    else
-        # This is expected if no restart happened (first run).
-        echo "  → SKIP (no restart happened yet — expected on first run)"
-    fi
-else
-    echo "  → SKIP (no persistence cookie file — expected on first run)"
-fi
+# C3-4: the persistence test (session across API restart) is handled
+# by the CI workflow (which restarts the API from the host). The
+# smoke.sh script does NOT test persistence — it tests that the
+# services are UP and functioning. This avoids the previous SKIP
+# logic that treated a missing cookie file as a pass.
 
 echo ""
 
