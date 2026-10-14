@@ -24,6 +24,7 @@ import {
   resetRun,
   listRuns,
 } from '../api/client';
+import { ensureGuestSession } from '../hooks/useGuestSession';
 
 interface ExperimentCardProps {
   manifest: ExperimentManifest;
@@ -63,6 +64,9 @@ export function ExperimentCard({
     setError(null);
     setInputsError(null);
     try {
+      // Mission I, ISSUE-004 fix: ensure guest session exists before
+      // calling createRun (which requires the ac_guest cookie).
+      await ensureGuestSession(locale);
       const inputs = parseInputs(inputsText, inputsFormat);
       if (inputs === null) {
         setInputsError(
@@ -383,10 +387,15 @@ export function ExperimentCard({
 
       {/* Last run result */}
       {lastRun && (
-        <div className="mt-3 rounded border border-ink-100 p-3 text-xs">
+        <div
+          className="mt-3 rounded border border-ink-100 p-3 text-xs"
+          data-testid={`run-result-${manifest.id}`}
+        >
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{t('experiments.status')}:</span>
-            <StatusBadge status={lastRun.status} />
+            <span data-testid={`verdict-${manifest.id}`}>
+              <StatusBadge status={lastRun.status} />
+            </span>
             <span className="text-ink-900/70">
               {t('experiments.runId')}: <code>{lastRun.run_id}</code>
             </span>

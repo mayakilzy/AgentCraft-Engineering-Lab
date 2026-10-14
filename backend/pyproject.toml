@@ -11,12 +11,32 @@ dependencies = [
   "fastapi==0.128.0",
   "uvicorn[standard]>=0.30.0",
   "pydantic>=2.9.0",
-  "pydantic-settings==2.7.1",
+  # Mission I, ISSUE-001: NoDecode annotation requires pydantic-settings>=2.4.
+  # Pin to >=2.15.0 for the latest fixes. The old ==2.7.1 pin broke CSV CORS.
+  "pydantic-settings>=2.15.0",
   "SQLAlchemy==2.0.36",
   "alembic==1.14.1",
   "psycopg2-binary==2.9.10",
   "asyncpg==0.30.0",
   "httpx==0.28.1",
+  # Manifest YAML loading (lab-modules/*.yaml).
+  "PyYAML>=6.0",
+  # Graph algorithms (E01-E06) — NetworkX is the fallback when Neo4j/GDS is absent.
+  "networkx>=3.4",
+  # Neo4j driver (E04 SQL-vs-Cypher, E06 communities with GDS).
+  "neo4j>=5.27",
+  # Prometheus /metrics endpoint.
+  "prometheus_client>=0.20",
+  # OpenTelemetry — required for trace_id population (ADR-0003 step 1).
+  # The SDK + instrumentation are mandatory because the run service
+  # captures the active span's trace_id at run-creation time. Without
+  # these packages, _capture_trace_id() returns None and E07/E09/E10
+  # validators correctly fail. (Mission I, ISSUE-003 fix.)
+  "opentelemetry-api>=1.40.0",
+  "opentelemetry-sdk>=1.40.0",
+  "opentelemetry-instrumentation-fastapi>=0.57b0",
+  "opentelemetry-instrumentation-sqlalchemy>=0.57b0",
+  "opentelemetry-exporter-otlp-proto-http>=1.40.0",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +44,20 @@ dev = [
   "pytest==8.3.4",
   "pytest-asyncio==0.25.3",
 ]
+
+# Mission J-FIX-01: explicit package discovery. Without this, setuptools
+# discovers both `app` and `alembic` as top-level packages in the flat
+# layout and refuses to build (Multiple top-level packages error).
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["app.tests*"]
+
+# Include alembic migration scripts as package data so they ship with
+# the wheel. They are NOT importable as a package (alembic loads them
+# by path), but they must be present in the installed tree.
+[tool.setuptools.package-data]
+app = ["../alembic/**/*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["app/tests"]

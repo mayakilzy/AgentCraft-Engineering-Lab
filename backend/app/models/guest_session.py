@@ -20,7 +20,11 @@ class GuestSession(Base, TimestampMixin):
     cookie_token: Mapped[str] = mapped_column(
         String(128), unique=True, nullable=False, index=True
     )  # opaque random token; the cookie value the client carries
+    # NOTE: `index=True` is intentionally omitted here — the explicit
+    # Index("ix_guest_sessions_expires_at", "expires_at") in __table_args__
+    # below creates the same index. Having both caused a duplicate-index
+    # error on fresh DB init (Mission H ISSUE-002, fixed Mission I).
     expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, index=True
+        DateTime(timezone=True), nullable=False
     )
     locale: Mapped[str] = mapped_column(String(8), nullable=False, default="en")

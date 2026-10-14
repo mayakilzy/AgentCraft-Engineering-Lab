@@ -16,10 +16,10 @@ the dev loop is not affected.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import List
+from typing import Annotated, List
 
 from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict, NoDecode
 
 
 # Default passwords that are NOT acceptable in production.
@@ -50,7 +50,11 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = False
 
     # Security
-    cors_origins: List[str] = ["http://localhost:5173", "http://localhost:8080"]
+    # cors_origins accepts CSV (from .env) or JSON array (from env var).
+    # Annotated with NoDecode so pydantic-settings does NOT JSON-parse
+    # the raw env string; the field_validator below handles both formats.
+    # (Mission I, ISSUE-001 fix.)
+    cors_origins: Annotated[List[str], NoDecode] = ["http://localhost:5173", "http://localhost:8080"]
     rate_limit_per_minute: int = 60
 
     # Lab runtime bounds
@@ -100,6 +104,29 @@ class Settings(BaseSettings):
         v = v.strip().lower()
         if v not in {"disabled", "openai"}:
             raise ValueError("mentor_provider must be disabled|openai")
+        return v
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, v):
+        """Accept both CSV (from .env files) and JSON arrays (from
+        explicit env vars). pydantic-settings 2.15.0 calls this
+        validator before JSON parsing (thanks to NoDecode), so CSV works.
+        Mission I, ISSUE-001 fix.
+        """
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("["):
+                import json
+                try:
+                    parsed = json.loads(stripped)
+                    if isinstance(parsed, list):
+                        return [str(o).strip() for o in parsed if str(o).strip()]
+                except json.JSONDecodeError:
+                    pass
+            return [o.strip() for o in v.split(",") if o.strip()]
+        if isinstance(v, (list, tuple)):
+            return [str(o).strip() for o in v if str(o).strip()]
         return v
 
     @model_validator(mode="after")

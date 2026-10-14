@@ -35,8 +35,9 @@ const LAYOUTS: { id: LayoutName; label: string }[] = [
   { id: 'breadthfirst', label: 'Breadthfirst (DAG)' },
 ];
 
-const KINDS = ['app', 'tool', 'skill'] as const;
-type Kind = (typeof KINDS)[number];
+// Mission I, ISSUE-005 fix: kind chips are derived from the loaded
+// graph's distinct kinds, not hardcoded. Empty kinds are not shown.
+type Kind = string;  // accept any kind the backend sends
 
 interface NodeDetail {
   id: string;
@@ -134,6 +135,18 @@ export function GraphLabPage() {
     });
   }
 
+  // Mission I, ISSUE-005 fix: derive kind chips from loaded elements.
+  const availableKinds: string[] = (() => {
+    const kinds = new Set<string>();
+    for (const el of elements) {
+      if (el.group === 'nodes') {
+        const kind = (el.data as { kind?: string }).kind;
+        if (kind) kinds.add(kind);
+      }
+    }
+    return Array.from(kinds).sort();
+  })();
+
   return (
     <main id="main-content" className="mx-auto max-w-6xl px-4 py-6" tabIndex={-1}>
       <h1 className="text-2xl font-semibold text-ink-900">{t('nav.graphLab')}</h1>
@@ -210,28 +223,32 @@ export function GraphLabPage() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-ink-900/70">Filter by kind:</span>
-          {KINDS.map((k) => {
-            const active = kindFilter.has(k);
-            // Empty filter means "show all"; clicking a kind toggles to "only".
-            return (
-              <label
-                key={k}
-                className={`flex items-center gap-1 rounded px-2 py-1 ${
-                  active
-                    ? 'bg-accent-500 text-white'
-                    : 'border border-ink-100 bg-white text-ink-900'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={active}
-                  onChange={() => toggleKind(k)}
-                  className="sr-only"
-                />
-                {k}
-              </label>
-            );
-          })}
+          {availableKinds.length === 0 ? (
+            <span className="text-ink-900/40 text-xs">(no nodes loaded)</span>
+          ) : (
+            availableKinds.map((k) => {
+              const active = kindFilter.has(k);
+              // Empty filter means "show all"; clicking a kind toggles to "only".
+              return (
+                <label
+                  key={k}
+                  className={`flex items-center gap-1 rounded px-2 py-1 ${
+                    active
+                      ? 'bg-accent-500 text-white'
+                      : 'border border-ink-100 bg-white text-ink-900'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={active}
+                    onChange={() => toggleKind(k)}
+                    className="sr-only"
+                  />
+                  {k}
+                </label>
+              );
+            })
+          )}
           {kindFilter.size > 0 && (
             <button
               className="text-ink-900/60 underline"

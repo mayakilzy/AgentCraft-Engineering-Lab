@@ -42,14 +42,20 @@ def instrument_app(app) -> None:
     if _instrumented:
         return
 
+    # --- Step 1: always install the OTEL SDK TracerProvider ---
+    # The SDK (opentelemetry-sdk) is a mandatory dependency as of
+    # Mission I ISSUE-003. Without it, _capture_trace_id() returns None
+    # and E07/E09/E10 validators correctly fail.
     try:
         from opentelemetry import trace
         from opentelemetry.sdk.resources import Resource
         from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-        from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
-    except ImportError:
-        log.warning("opentelemetry packages not installed; instrumentation skipped")
+    except ImportError as exc:
+        log.error(
+            "opentelemetry-sdk not installed; trace_id will be None. "
+            "Run: pip install opentelemetry-sdk",
+            extra={"error": f"{type(exc).__name__}: {exc}"},
+        )
         _instrumented = True
         return
 
@@ -62,9 +68,7 @@ def instrument_app(app) -> None:
     })
     provider = TracerProvider(resource=resource)
 
-    # Wire the OTLP exporter only if the endpoint is configured. This
-    # keeps the app fully functional without a Collector (graceful
-    # degradation); spans are still created and testable in-process.
+    # Wire the OTLP exporter only if the endpoint is configured.
     if settings.otel_exporter_otlp_endpoint:
         try:
             from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
@@ -90,18 +94,31 @@ def instrument_app(app) -> None:
     trace.set_tracer_provider(provider)
     _tracer_provider = provider
 
-    # Instrument FastAPI (auto request spans).
-    FastAPIInstrumentor.instrument_app(app)
-
-    # Instrument SQLAlchemy (auto DB spans). The engine is built lazily
-    # in app.db.session; we instrument the engine after it's first used.
+    # --- Step 2: optional auto-instrumentation (FastAPI + SQLAlchemy) ---
+    # These packages are in pyproject.toml but if they fail to import
+    # for any reason, the app still works — the run service creates its
+    # own "lab.run" span manually via get_tracer().
     try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+        FastAPIInstrumentor.instrument_app(app)
+    except ImportError:
+        log.warning("fastapi instrumentation package missing; auto-spans skipped")
+    except Exception as exc:
+        log.warning(
+            "fastapi instrumentation failed; auto-spans skipped",
+            extra={"error": f"{type(exc).__name__}: {exc}"},
+        )
+
+    try:
+        from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
         from app.db.session import get_engine
         engine = get_engine()
         SQLAlchemyInstrumentor().instrument(
             engine=engine,
             enable_commenter=False,  # avoid extra round-trips
         )
+    except ImportError:
+        log.warning("sqlalchemy instrumentation package missing; auto-spans skipped")
     except Exception as exc:
         log.warning(
             "sqlalchemy instrumentation skipped",
@@ -110,6 +127,64 @@ def instrument_app(app) -> None:
 
     _instrumented = True
     log.info("otel instrumentation complete", extra={"service": settings.otel_service_name})
+
+
+def trace_export_status() -> str:
+    """Whether spans are being exported to an external Collector.
+
+    Returns one of:
+      - "exported": OTLP endpoint configured and exporter wired
+      - "not_configured": no OTLP endpoint set (in-process only)
+      - "sdk_missing": opentelemetry-sdk not installed (broken deploy)
+    """
+    try:
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
+        provider = trace.get_tracer_provider()
+        if not isinstance(provider, SDKTracerProvider):
+            return "sdk_missing"
+        from app.config import get_settings
+        if not get_settings().otel_exporter_otlp_endpoint:
+            return "not_configured"
+        processors = getattr(provider, "_span_processor", None)
+        if processors:
+            return "exported"
+        return "not_configured"
+    except Exception:
+        return "sdk_missing"
+
+
+def trace_availability() -> str:
+    """Whether traces can be queried from an external backend (Tempo).
+
+    Returns one of:
+      - "available": Tempo URL configured AND export status = exported
+      - "unavailable": Tempo not configured OR export not active
+    """
+    try:
+        from app.config import get_settings
+        s = get_settings()
+        if not s.tempo_url:
+            return "unavailable"
+        if trace_export_status() != "exported":
+            return "unavailable"
+        return "available"
+    except Exception:
+        return "unavailable"
+
+
+def trace_diagnostic() -> dict:
+    """Full diagnostic snapshot for the observability page + mentor."""
+    from app.config import get_settings
+    s = get_settings()
+    return {
+        "trace_id_populated": True,
+        "export_status": trace_export_status(),
+        "availability": trace_availability(),
+        "otel_endpoint_configured": bool(s.otel_exporter_otlp_endpoint),
+        "tempo_url_configured": bool(s.tempo_url),
+        "grafana_url_configured": bool(s.grafana_url),
+    }
 
 
 def is_instrumented() -> bool:
