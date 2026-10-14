@@ -261,11 +261,25 @@ def test_compose_has_resource_limits():
 # ---- T26: Compose admin ports not exposed ----
 
 def test_compose_admin_ports_not_exposed():
-    """T26 + ADR-0003 Part B #2 + G07-C1-02: Prometheus (9090),
-    Tempo (3200), OTEL Collector (4317/4318/8889) must NOT be exposed
-    publicly. The FastAPI backend (8000) is NOT exposed publicly either
-    — Nginx (the `web` service on 8080) is the only public entry point.
-    Only Grafana (3000) and web (8080) have public ports."""
+    """T26 + ADR-0003 Part B #2 + G07-C1-02 + Mission J-FIX-04: only
+    specific admin ports are exposed publicly.
+
+    Mission J-FIX-04 change: the `web` service now uses `expose` (not
+    `ports`) so Nginx Proxy Manager (NPM) fronts it on an external
+    Docker network. The `ports:` block for web is commented out in
+    docker-compose.yml and only enabled for local testing.
+
+    Public ports (via `ports:`):
+      - 3000 (grafana) — admin auth required
+
+    Internal-only (via `expose:`):
+      - 80 (web/nginx) — reachable on the Docker network + NPM proxy-net
+      - 8000 (api) — reachable on the Docker network only
+
+    NOT exposed at all:
+      - 5432 (postgres), 7687 (neo4j), 9090 (prometheus),
+        3200 (tempo), 4317/4318 (otel collector)
+    """
     compose = Path(__file__).resolve().parents[3] / "docker-compose.yml"
     content = compose.read_text()
 
@@ -277,11 +291,11 @@ def test_compose_admin_ports_not_exposed():
         # Extract the host port (before the colon or the full value).
         host_port = block.split(":")[0]
         exposed.add(host_port)
-    # G07-C1-02: the API port 8000 must NOT be in the public ports list.
-    # Only 8080 (nginx/web) and 3000 (grafana) are public.
-    assert "8080" in exposed  # web (nginx)
-    assert "3000" in exposed  # grafana
+    # Mission J-FIX-04: only Grafana (3000) is publicly exposed by default.
+    # The web service is on `expose:` (internal) so NPM fronts it.
+    assert "3000" in exposed  # grafana (admin auth required)
     assert "8000" not in exposed  # api NOT exposed (G07-C1-02)
+    assert "8080" not in exposed  # web NOT exposed publicly (Mission J-FIX-04: NPM fronts it)
     assert "9090" not in exposed  # prometheus NOT exposed
     assert "3200" not in exposed  # tempo NOT exposed
     assert "4317" not in exposed  # otel collector NOT exposed

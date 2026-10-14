@@ -118,8 +118,14 @@ services:
     profiles: [core]
     depends_on:
       - api
-    ports:
-      - "8080:80"
+    # Mission J-FIX-04: expose (not ports) so the frontend is reachable
+    # on the Docker network but NOT published to the host. NPM fronts
+    # it via the external proxy-net network.
+    # To publish to the host during initial testing, uncomment:
+    # ports:
+    #   - "8080:80"
+    expose:
+      - "80"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
       interval: 15s
@@ -129,7 +135,9 @@ services:
       resources:
         limits:
           memory: 128M
-    networks: [agentcraft-net]
+    networks:
+      - agentcraft-net
+      - ${NPM_NETWORK:-agentcraft-proxy}
 
   # ---- G07-C1-04 + G07-C2-02: scheduled purge cron ----
   # Runs `python -m app.cleanup_purge` every 6 hours. The exit status is
@@ -308,3 +316,14 @@ volumes:
 networks:
   agentcraft-net:
     driver: bridge
+  # Mission J-FIX-04: external network for Nginx Proxy Manager.
+  # Create it once on the server:
+  #   docker network create agentcraft-proxy
+  # Then set in your .env:
+  #   NPM_NETWORK=agentcraft-proxy
+  # NPM's proxy host then targets `http://web:80` using the service
+  # name on this network. If NPM_NETWORK is not set, the default
+  # 'agentcraft-proxy' is used.
+  proxy-net:
+    external: true
+    name: ${NPM_NETWORK:-agentcraft-proxy}
