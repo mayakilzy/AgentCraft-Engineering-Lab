@@ -6,6 +6,10 @@
  * Selection: detail panel for node or edge.
  * Empty state: a clear prompt to seed a dataset.
  * Error state: surface API errors without crashing.
+ *
+ * Mission II: wrapped in AppShell and restyled with the design-system
+ * classes (.card, .segmented, .info-line, .field, .graph-stage, etc.).
+ * Cytoscape integration and the kind-filter fix are preserved.
  */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -13,6 +17,8 @@ import {
   GraphViewer,
   type LayoutName,
 } from '../components/GraphViewer';
+import { AppShell } from '../components/AppShell';
+import { Card, Status, EmptyState, Callout } from '../components/ui';
 import {
   ApiError,
   type CytoscapeElement,
@@ -32,12 +38,12 @@ const LAYOUTS: { id: LayoutName; label: string }[] = [
   { id: 'grid', label: 'Grid' },
   { id: 'circle', label: 'Circle' },
   { id: 'concentric', label: 'Concentric' },
-  { id: 'breadthfirst', label: 'Breadthfirst (DAG)' },
+  { id: 'breadthfirst', label: 'Breadthfirst' },
 ];
 
 // Mission I, ISSUE-005 fix: kind chips are derived from the loaded
 // graph's distinct kinds, not hardcoded. Empty kinds are not shown.
-type Kind = string;  // accept any kind the backend sends
+type Kind = string;
 
 interface NodeDetail {
   id: string;
@@ -148,12 +154,18 @@ export function GraphLabPage() {
   })();
 
   return (
-    <main id="main-content" className="mx-auto max-w-6xl px-4 py-6" tabIndex={-1}>
-      <h1 className="text-2xl font-semibold text-ink-900">{t('nav.graphLab')}</h1>
+    <AppShell>
+      <section className="page-heading" aria-labelledby="graph-title">
+        <div>
+          <div className="eyebrow">{t('nav.graphLab')}</div>
+          <h1 id="graph-title">{t('graph.title')}</h1>
+          <p>{t('graph.topology')}</p>
+        </div>
+      </section>
 
       {error && (
         <div
-          className="mt-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800"
+          className="mb-4 rounded-btn border border-danger-100 bg-danger-50 p-3 text-[12px] text-danger-600"
           role="alert"
         >
           {error}
@@ -161,24 +173,25 @@ export function GraphLabPage() {
       )}
 
       {/* Dataset controls */}
-      <section className="mt-4 rounded border border-ink-100 bg-white p-3 text-sm">
+      <Card className="mb-3">
         <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col text-xs text-ink-900/70">
-            Dataset id
+          <label className="flex flex-col text-[11px] font-bold uppercase tracking-wide text-ink-500">
+            {t('graph.dataset')}
             <input
               type="text"
               value={datasetInput}
               onChange={(e) => setDatasetInput(e.target.value)}
-              className="mt-1 rounded border border-ink-100 px-2 py-1 text-sm"
-              aria-label="Dataset id"
+              className="mt-1 min-w-[200px] rounded-btn border border-ink-200 bg-white px-3 py-2 text-[12px]"
+              aria-label={t('graph.dataset')}
+              data-testid="dataset-input"
             />
           </label>
-          <label className="flex flex-col text-xs text-ink-900/70">
+          <label className="flex flex-col text-[11px] font-bold uppercase tracking-wide text-ink-500">
             Fixture
             <select
               value={fixtureInput}
               onChange={(e) => setFixtureInput(e.target.value)}
-              className="mt-1 rounded border border-ink-100 px-2 py-1 text-sm"
+              className="mt-1"
               aria-label="Fixture"
             >
               <option value="starter-five-v1">starter-five-v1 (E01)</option>
@@ -187,210 +200,246 @@ export function GraphLabPage() {
             </select>
           </label>
           <button
+            type="button"
             onClick={onSeed}
             disabled={loading}
-            className="rounded bg-accent-500 px-3 py-1.5 text-sm text-white hover:bg-accent-600 disabled:opacity-50"
+            className="btn-primary"
+            data-testid="seed-button"
           >
-            {loading ? t('common.loading') : 'Load'}
+            {loading ? t('common.loading') : t('graph.seedGraph')}
           </button>
           <button
+            type="button"
             onClick={() => refresh(datasetInput)}
-            className="rounded border border-ink-100 bg-white px-3 py-1.5 text-sm text-ink-900 hover:bg-ink-100"
+            className="btn-secondary"
           >
-            Refresh
+            {t('common.refresh')}
           </button>
         </div>
-      </section>
+      </Card>
 
-      {/* Layout + kind filter */}
-      <section className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-1">
-          <span className="text-ink-900/70">Layout:</span>
-          {LAYOUTS.map((l) => (
-            <button
-              key={l.id}
-              onClick={() => setLayout(l.id)}
-              className={`rounded px-2 py-1 ${
-                layout === l.id
-                  ? 'bg-accent-500 text-white'
-                  : 'border border-ink-100 bg-white text-ink-900 hover:bg-ink-100'
-              }`}
-              aria-pressed={layout === l.id}
-            >
-              {l.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-ink-900/70">Filter by kind:</span>
-          {availableKinds.length === 0 ? (
-            <span className="text-ink-900/40 text-xs">(no nodes loaded)</span>
-          ) : (
-            availableKinds.map((k) => {
-              const active = kindFilter.has(k);
-              // Empty filter means "show all"; clicking a kind toggles to "only".
-              return (
-                <label
-                  key={k}
-                  className={`flex items-center gap-1 rounded px-2 py-1 ${
-                    active
-                      ? 'bg-accent-500 text-white'
-                      : 'border border-ink-100 bg-white text-ink-900'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={active}
-                    onChange={() => toggleKind(k)}
-                    className="sr-only"
-                  />
-                  {k}
-                </label>
-              );
-            })
-          )}
-          {kindFilter.size > 0 && (
-            <button
-              className="text-ink-900/60 underline"
-              onClick={() => setKindFilter(new Set())}
-            >
-              clear
-            </button>
-          )}
-        </div>
-      </section>
+      {/* Layout segmented control + kind filter chips */}
+      <Card className="mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="segmented" role="group" aria-label={t('graph.layout')}>
+            <span className="muted px-2 text-[11px] font-bold uppercase tracking-wide">
+              {t('graph.layout')}:
+            </span>
+            {LAYOUTS.map((l) => (
+              <button
+                key={l.id}
+                type="button"
+                className={layout === l.id ? 'selected' : ''}
+                aria-pressed={layout === l.id}
+                onClick={() => setLayout(l.id)}
+                data-testid={`layout-${l.id}`}
+              >
+                {l.label}
+              </button>
+            ))}
+          </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[1fr_18rem]">
-        {/* Viewer */}
+          <div className="flex flex-wrap items-center gap-2 text-[12px]">
+            <span className="muted text-[11px] font-bold uppercase tracking-wide">
+              {t('graph.kindFilter')}:
+            </span>
+            {availableKinds.length === 0 ? (
+              <span className="muted text-[11px]">
+                ({t('common.notChecked')})
+              </span>
+            ) : (
+              availableKinds.map((k) => {
+                const active = kindFilter.has(k);
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => toggleKind(k)}
+                    aria-pressed={active}
+                    data-testid={`kind-chip-${k}`}
+                    className={`rounded-btn border px-2 py-1 text-[11px] font-bold ${
+                      active
+                        ? 'border-brand-500 bg-brand-500 text-white'
+                        : 'border-ink-200 bg-white text-ink-600'
+                    }`}
+                  >
+                    {k}
+                  </button>
+                );
+              })
+            )}
+            {kindFilter.size > 0 && (
+              <button
+                type="button"
+                className="text-link"
+                onClick={() => setKindFilter(new Set())}
+                data-testid="kind-clear"
+              >
+                {t('history.clearSelection')}
+              </button>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      <div className="workbench" style={{ gridTemplateColumns: 'minmax(0,1fr) 280px' }}>
+        {/* Viewer stage */}
         <div>
           {elements.length === 0 ? (
-            <div
-              className="flex h-96 items-center justify-center rounded border border-dashed border-ink-100 bg-ink-50 text-sm text-ink-900/60"
-              role="status"
-            >
-              Empty dataset — pick a fixture and click Load.
-            </div>
-          ) : (
-            <GraphViewer
-              elements={elements}
-              layout={layout}
-              kindFilter={kindFilter as Set<string>}
-              onSelectNode={setSelectedNode}
-              onSelectEdge={setSelectedEdge}
+            <EmptyState
+              title={t('graph.selectNode')}
+              body={t('graph.staticIllustrationNote')}
             />
+          ) : (
+            <div className="graph-stage" data-testid="graph-stage">
+              <GraphViewer
+                elements={elements}
+                layout={layout}
+                kindFilter={kindFilter as Set<string>}
+                onSelectNode={setSelectedNode}
+                onSelectEdge={setSelectedEdge}
+              />
+            </div>
           )}
         </div>
 
         {/* Side panel: metrics + selection + shortest path */}
         <aside className="flex flex-col gap-3">
           {metrics && (
-            <div className="rounded border border-ink-100 bg-white p-3 text-xs">
-              <h2 className="mb-2 text-sm font-semibold text-ink-900">
-                Metrics
+            <Card>
+              <h2 className="mb-2 text-[14px] font-bold text-ink-900">
+                {t('graph.metrics')}
               </h2>
-              <dl className="grid grid-cols-2 gap-1">
-                <dt className="text-ink-900/60">Nodes</dt>
-                <dd className="text-right">{metrics.node_count}</dd>
-                <dt className="text-ink-900/60">Edges</dt>
-                <dd className="text-right">{metrics.edge_count}</dd>
-                <dt className="text-ink-900/60">Directed</dt>
-                <dd className="text-right">{metrics.is_directed ? 'yes' : 'no'}</dd>
-                <dt className="text-ink-900/60">DAG</dt>
-                <dd className="text-right">{metrics.is_dag ? 'yes' : 'no'}</dd>
-                <dt className="text-ink-900/60">WCC</dt>
-                <dd className="text-right">{metrics.weakly_connected_components}</dd>
-                <dt className="text-ink-900/60">Density</dt>
-                <dd className="text-right">{metrics.density.toFixed(3)}</dd>
-              </dl>
-            </div>
+              <div className="info-line">
+                <span>{t('graph.nodeCount')}</span>
+                <b>{metrics.node_count}</b>
+              </div>
+              <div className="info-line">
+                <span>{t('graph.edgeCount')}</span>
+                <b>{metrics.edge_count}</b>
+              </div>
+              <div className="info-line">
+                <span>{t('graph.directed')}</span>
+                <b>{metrics.is_directed ? 'yes' : 'no'}</b>
+              </div>
+              <div className="info-line">
+                <span>{t('graph.isDag')}</span>
+                <b>{metrics.is_dag ? 'yes' : 'no'}</b>
+              </div>
+              <div className="info-line">
+                <span>{t('graph.weaklyConnected')}</span>
+                <b>{metrics.weakly_connected_components}</b>
+              </div>
+              <div className="info-line">
+                <span>{t('graph.density')}</span>
+                <b>{metrics.density.toFixed(3)}</b>
+              </div>
+            </Card>
           )}
 
           {selectedNode && (
-            <div className="rounded border border-accent-500 bg-white p-3 text-xs">
-              <h2 className="mb-2 text-sm font-semibold text-ink-900">
-                Selected node
+            <Card>
+              <h2 className="mb-2 text-[14px] font-bold text-ink-900">
+                {t('graph.nodeInspector')}
               </h2>
-              <dl className="grid grid-cols-2 gap-1">
-                <dt className="text-ink-900/60">id</dt>
-                <dd className="text-right font-mono">{selectedNode.id}</dd>
-                <dt className="text-ink-900/60">label</dt>
-                <dd className="text-right">{selectedNode.label}</dd>
-                <dt className="text-ink-900/60">kind</dt>
-                <dd className="text-right">{selectedNode.kind}</dd>
-              </dl>
-            </div>
+              <div className="info-line">
+                <span>id</span>
+                <code className="text-[11px]">{selectedNode.id}</code>
+              </div>
+              <div className="info-line">
+                <span>label</span>
+                <b>{selectedNode.label}</b>
+              </div>
+              <div className="info-line">
+                <span>kind</span>
+                <Status tone="blue">{selectedNode.kind}</Status>
+              </div>
+            </Card>
           )}
 
           {selectedEdge && (
-            <div className="rounded border border-accent-500 bg-white p-3 text-xs">
-              <h2 className="mb-2 text-sm font-semibold text-ink-900">
+            <Card>
+              <h2 className="mb-2 text-[14px] font-bold text-ink-900">
                 Selected edge
               </h2>
-              <dl className="grid grid-cols-2 gap-1">
-                <dt className="text-ink-900/60">source</dt>
-                <dd className="text-right font-mono">{selectedEdge.source}</dd>
-                <dt className="text-ink-900/60">target</dt>
-                <dd className="text-right font-mono">{selectedEdge.target}</dd>
-                <dt className="text-ink-900/60">relation</dt>
-                <dd className="text-right">{selectedEdge.relation}</dd>
-              </dl>
-              <p className="mt-2 text-[10px] text-ink-900/60">
+              <div className="info-line">
+                <span>source</span>
+                <code className="text-[11px]">{selectedEdge.source}</code>
+              </div>
+              <div className="info-line">
+                <span>target</span>
+                <code className="text-[11px]">{selectedEdge.target}</code>
+              </div>
+              <div className="info-line">
+                <span>relation</span>
+                <b>{selectedEdge.relation}</b>
+              </div>
+              <Callout>
                 Arrow direction: {selectedEdge.source} → {selectedEdge.target}.
-              </p>
-            </div>
+              </Callout>
+            </Card>
           )}
 
-          {/* Shortest path mini-tool (E02 preview; validator gates in G05) */}
-          <div className="rounded border border-ink-100 bg-white p-3 text-xs">
-            <h2 className="mb-2 text-sm font-semibold text-ink-900">
-              Shortest path (directed)
+          {/* Shortest path mini-tool */}
+          <Card>
+            <h2 className="mb-2 text-[14px] font-bold text-ink-900">
+              {t('graph.shortestPath')}
             </h2>
             <div className="flex flex-col gap-2">
               <input
                 type="text"
-                placeholder="source node_ref"
+                placeholder={t('graph.sourceLabel')}
                 value={pathInput.source}
                 onChange={(e) =>
                   setPathInput((p) => ({ ...p, source: e.target.value }))
                 }
-                className="rounded border border-ink-100 px-2 py-1 text-xs"
-                aria-label="source node_ref"
+                className="rounded-btn border border-ink-200 bg-white px-3 py-2 text-[12px]"
+                aria-label={t('graph.sourceLabel')}
+                data-testid="path-source"
               />
               <input
                 type="text"
-                placeholder="target node_ref"
+                placeholder={t('graph.targetLabel')}
                 value={pathInput.target}
                 onChange={(e) =>
                   setPathInput((p) => ({ ...p, target: e.target.value }))
                 }
-                className="rounded border border-ink-100 px-2 py-1 text-xs"
-                aria-label="target node_ref"
+                className="rounded-btn border border-ink-200 bg-white px-3 py-2 text-[12px]"
+                aria-label={t('graph.targetLabel')}
+                data-testid="path-target"
               />
               <button
+                type="button"
                 onClick={onShortestPath}
-                className="rounded bg-accent-500 px-2 py-1 text-xs text-white hover:bg-accent-600"
+                className="btn-primary"
+                data-testid="path-compute"
               >
-                Find
+                {t('graph.computePath')}
               </button>
             </div>
             {path && (
-              <div className="mt-2 rounded bg-ink-50 p-2 text-[11px]">
+              <div
+                className="mt-3 rounded-btn bg-surface-subtle p-3 text-[11px]"
+                data-testid="path-result"
+              >
                 {path.path ? (
                   <>
-                    <div className="font-mono break-all">{path.path.join(' → ')}</div>
-                    <div className="mt-1 text-ink-900/60">
-                      length: {path.length}
+                    <div className="font-mono break-all text-[11px] text-ink-700">
+                      {path.path.join(' → ')}
+                    </div>
+                    <div className="muted mt-1">
+                      {t('graph.pathLength')}: {path.length}
                     </div>
                   </>
                 ) : (
-                  <div className="text-ink-900/60">No directed path.</div>
+                  <div className="muted">{t('graph.noPath')}</div>
                 )}
               </div>
             )}
-          </div>
+          </Card>
         </aside>
       </div>
-    </main>
+    </AppShell>
   );
 }
 

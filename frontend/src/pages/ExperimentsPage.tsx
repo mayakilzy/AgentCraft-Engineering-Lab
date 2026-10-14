@@ -1,15 +1,17 @@
 /**
- * ExperimentsPage — T20 (G05).
+ * ExperimentsPage — gallery of all 10 canonical experiments.
  *
  * Per the architecture contract §1 + A09: cards, levels, stepper,
  * prerequisites, expected/actual and mode switch; no direct code execution.
  *
  * Loads the 10 experiment manifests from the backend, displays each as
  * a card with run/rerun/reset/compare/export controls, and provides a
- * compare panel for selecting two runs.
+ * compare panel for selecting two runs. Uses AppShell. Falls back to
+ * FALLBACK_MANIFESTS in preview mode.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Search, Filter } from 'lucide-react';
 import {
   compareRuns,
   getExperiment,
@@ -18,6 +20,12 @@ import {
   type ExperimentManifest,
 } from '../api/client';
 import { ExperimentCard } from '../components/ExperimentCard';
+import { AppShell } from '../components/AppShell';
+import { Card, Status } from '../components/ui';
+import { FALLBACK_MANIFESTS } from '../data/fallbackExperiments';
+
+const LEVELS = ['all', 'beginner', 'intermediate', 'advanced'] as const;
+type LevelFilter = (typeof LEVELS)[number];
 
 export function ExperimentsPage() {
   const { t, i18n } = useTranslation();
@@ -26,8 +34,11 @@ export function ExperimentsPage() {
   const [manifests, setManifests] = useState<ExperimentManifest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState(false);
   const [selectedForCompare, setSelectedForCompare] = useState<string[]>([]);
   const [compareResult, setCompareResult] = useState<CompareResponse | null>(null);
+  const [search, setSearch] = useState('');
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>('all');
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +55,8 @@ export function ExperimentsPage() {
         }
       } catch (err) {
         if (!cancelled) {
+          setPreview(true);
+          setManifests(FALLBACK_MANIFESTS);
           setError(err instanceof Error ? err.message : String(err));
         }
       } finally {
@@ -65,13 +78,25 @@ export function ExperimentsPage() {
       intermediate: 1,
       advanced: 2,
     };
-    return [...manifests].sort((a, b) => {
-      const la = levelOrder[a.level] ?? 99;
-      const lb = levelOrder[b.level] ?? 99;
-      if (la !== lb) return la - lb;
-      return a.id.localeCompare(b.id);
-    });
-  }, [manifests]);
+    const q = search.trim().toLowerCase();
+    return [...manifests]
+      .filter((m) => {
+        if (levelFilter !== 'all' && m.level !== levelFilter) return false;
+        if (!q) return true;
+        const title = (locale === 'ar' ? m.title.ar : m.title.en).toLowerCase();
+        return (
+          title.includes(q) ||
+          m.id.toLowerCase().includes(q) ||
+          m.technology.some((tech) => tech.toLowerCase().includes(q))
+        );
+      })
+      .sort((a, b) => {
+        const la = levelOrder[a.level] ?? 99;
+        const lb = levelOrder[b.level] ?? 99;
+        if (la !== lb) return la - lb;
+        return a.id.localeCompare(b.id);
+      });
+  }, [manifests, levelFilter, search, locale]);
 
   function onCompareSelect(runId: string) {
     setSelectedForCompare((prev) => {
@@ -96,63 +121,92 @@ export function ExperimentsPage() {
   }
 
   return (
-    <main
-      id="main-content"
-      className="mx-auto max-w-6xl px-4 py-8"
-      tabIndex={-1}
-    >
-      <h1 className="text-3xl font-semibold text-ink-900">
-        {t('experiments.title')}
-      </h1>
-      <p className="mt-3 max-w-2xl text-sm text-ink-900/80">
-        {t('experiments.description')}
-      </p>
+    <AppShell previewMode={preview}>
+      <section className="page-heading" aria-labelledby="experiments-title">
+        <div>
+          <div className="eyebrow">{t('nav.experiments')}</div>
+          <h1 id="experiments-title">{t('experiments.title')}</h1>
+          <p>{t('experiments.description')}</p>
+        </div>
+        <Status tone={preview ? 'amber' : 'green'}>
+          {preview ? t('common.previewData') : `${manifests.length} ${t('experiments.experimentCount')}`}
+        </Status>
+      </section>
+
+      {/* Toolbar: search + level filter */}
+      <div className="toolbar">
+        <div className="field">
+          <Search size={14} aria-hidden />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('experiments.searchPlaceholder')}
+            aria-label={t('experiments.searchPlaceholder')}
+            data-testid="experiments-search"
+          />
+        </div>
+        <div className="segmented" role="group" aria-label="Level filter">
+          <Filter size={14} className="me-1" aria-hidden />
+          {LEVELS.map((lv) => (
+            <button
+              key={lv}
+              type="button"
+              className={levelFilter === lv ? 'selected' : ''}
+              aria-pressed={levelFilter === lv}
+              onClick={() => setLevelFilter(lv)}
+              data-testid={`experiments-filter-${lv}`}
+            >
+              {lv === 'all' ? t('experiments.filterAll') : t(`experiments.level.${lv}`)}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {loading && (
-        <p className="mt-6 text-sm text-ink-900/70" data-testid="loading-experiments">
+        <p className="text-[13px] text-ink-500" data-testid="loading-experiments">
           {t('common.loading')}
         </p>
       )}
 
-      {error && (
-        <p role="alert" className="mt-6 text-sm text-red-700">
+      {error && !preview && (
+        <p role="alert" className="text-[13px] text-danger-600">
           {t('experiments.failedToLoad')}: {error}
         </p>
       )}
 
-      {!loading && !error && manifests.length === 0 && (
-        <p className="mt-6 text-sm text-ink-900/70">
-          {t('experiments.noExperiments')}
-        </p>
+      {!loading && sorted.length === 0 && (
+        <p className="text-[13px] text-ink-500">{t('experiments.noExperiments')}</p>
       )}
 
-      {!loading && !error && manifests.length > 0 && (
+      {!loading && sorted.length > 0 && (
         <>
-          <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {sorted.map((m) => (
+          <div className="exp-grid">
+            {sorted.map((m, i) => (
               <ExperimentCard
                 key={m.id}
                 manifest={m}
                 locale={locale}
                 selectedForCompare={selectedForCompare}
                 onCompareSelect={onCompareSelect}
+                displayLabel={`E${String(i + 1).padStart(2, '0')}`}
               />
             ))}
           </div>
 
           {/* Compare panel */}
-          <section className="mt-6 rounded border border-ink-100 bg-white p-4">
-            <h2 className="text-lg font-semibold text-ink-900">
+          <Card className="mt-[18px]">
+            <h2 className="text-[16px] font-bold text-ink-900">
               {t('experiments.compare')}
             </h2>
-            <p className="mt-1 text-xs text-ink-900/70">
+            <p className="mt-1 text-[12px] text-ink-500">
               {t('experiments.selectToCompare')}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {selectedForCompare.map((id, i) => (
                 <code
                   key={id}
-                  className="rounded bg-ink-50 px-2 py-1 text-[10px] text-ink-900/70"
+                  className="rounded-btn bg-surface-subtle px-2 py-1 text-[10px] text-ink-600"
                 >
                   {i + 1}: {id.slice(0, 8)}…
                 </code>
@@ -161,7 +215,7 @@ export function ExperimentsPage() {
                 type="button"
                 onClick={handleCompare}
                 disabled={selectedForCompare.length !== 2}
-                className="rounded bg-ink-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+                className="btn-primary"
                 data-testid="compare-button"
               >
                 {t('experiments.compare')}
@@ -173,75 +227,73 @@ export function ExperimentsPage() {
                     setSelectedForCompare([]);
                     setCompareResult(null);
                   }}
-                  className="rounded border border-ink-100 bg-white px-3 py-1 text-xs"
+                  className="btn-secondary"
                 >
-                  Clear
+                  {t('history.clearSelection')}
                 </button>
               )}
             </div>
             {compareResult && (
               <div
-                className="mt-4 rounded bg-ink-50 p-3 text-xs"
+                className="mt-4 rounded-btn bg-surface-subtle p-3 text-[12px]"
                 data-testid="compare-results"
               >
-                <h3 className="font-medium text-ink-900">
+                <h3 className="font-bold text-ink-900">
                   {t('experiments.compareResults')}
                 </h3>
                 <dl className="mt-2 grid grid-cols-3 gap-2">
-                  <div className="rounded bg-white p-2">
-                    <dt className="text-[10px] text-ink-900/60">
+                  <div className="rounded-btn bg-white p-2">
+                    <dt className="text-[10px] text-ink-500">
                       {t('experiments.sameExperiment')}
                     </dt>
-                    <dd className="mt-0.5 text-sm font-medium">
+                    <dd className="mt-0.5 text-[14px] font-bold">
                       {compareResult.same_experiment ? '✓' : '✗'}
                     </dd>
                   </div>
-                  <div className="rounded bg-white p-2">
-                    <dt className="text-[10px] text-ink-900/60">
+                  <div className="rounded-btn bg-white p-2">
+                    <dt className="text-[10px] text-ink-500">
                       {t('experiments.sameStatus')}
                     </dt>
-                    <dd className="mt-0.5 text-sm font-medium">
+                    <dd className="mt-0.5 text-[14px] font-bold">
                       {compareResult.same_final_status ? '✓' : '✗'}
                     </dd>
                   </div>
-                  <div className="rounded bg-white p-2">
-                    <dt className="text-[10px] text-ink-900/60">
+                  <div className="rounded-btn bg-white p-2">
+                    <dt className="text-[10px] text-ink-500">
                       {t('experiments.sameStepCount')}
                     </dt>
-                    <dd className="mt-0.5 text-sm font-medium">
+                    <dd className="mt-0.5 text-[14px] font-bold">
                       {compareResult.same_step_count ? '✓' : '✗'}
                     </dd>
                   </div>
                 </dl>
-                <p className="mt-2 text-ink-900/70">{compareResult.note}</p>
+                <p className="mt-2 text-ink-500">{compareResult.note}</p>
                 {compareResult.step_diffs.length > 0 && (
                   <div className="mt-3">
-                    <h4 className="text-[10px] font-medium text-ink-900/70">
+                    <h4 className="text-[10px] font-bold text-ink-500">
                       {t('experiments.steps')}
                     </h4>
                     <table className="mt-1 w-full text-[10px]">
                       <thead>
-                        <tr className="border-b border-ink-100 text-left">
-                          <th className="py-1 pr-2">#</th>
-                          <th className="py-1 pr-2">{t('experiments.step')}</th>
-                          <th className="py-1 pr-2">A {t('experiments.verdict')}</th>
-                          <th className="py-1 pr-2">B {t('experiments.verdict')}</th>
-                          <th className="py-1 pr-2">Match</th>
+                        <tr>
+                          <th>#</th>
+                          <th>{t('experiments.step')}</th>
+                          <th>A {t('experiments.verdict')}</th>
+                          <th>B {t('experiments.verdict')}</th>
+                          <th>Match</th>
                         </tr>
                       </thead>
                       <tbody>
                         {compareResult.step_diffs.map((d, i) => (
                           <tr
                             key={i}
-                            className={`border-b border-ink-50 ${
-                              d.same_verdict === false ? 'bg-amber-50' : ''
-                            }`}
+                            className={d.same_verdict === false ? 'bg-warn-50' : ''}
                           >
-                            <td className="py-1 pr-2">{i + 1}</td>
-                            <td className="py-1 pr-2">{String(d.step_id ?? '-')}</td>
-                            <td className="py-1 pr-2">{String(d.a_passed ?? '-')}</td>
-                            <td className="py-1 pr-2">{String(d.b_passed ?? '-')}</td>
-                            <td className="py-1 pr-2">
+                            <td>{i + 1}</td>
+                            <td>{String(d.step_id ?? '-')}</td>
+                            <td>{String(d.a_passed ?? '-')}</td>
+                            <td>{String(d.b_passed ?? '-')}</td>
+                            <td>
                               {d.same_verdict === true ? '✓' : d.same_verdict === false ? '✗' : '?'}
                             </td>
                           </tr>
@@ -252,9 +304,9 @@ export function ExperimentsPage() {
                 )}
               </div>
             )}
-          </section>
+          </Card>
         </>
       )}
-    </main>
+    </AppShell>
   );
 }

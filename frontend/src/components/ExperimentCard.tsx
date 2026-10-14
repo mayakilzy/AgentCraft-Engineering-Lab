@@ -1,5 +1,5 @@
 /**
- * ExperimentCard — T20 (G05).
+ * ExperimentCard — gallery card for one experiment.
  *
  * Per the architecture contract §1 + A09: each card offers Guided Mode
  * and Challenge Mode, displays the level, prerequisites, expected
@@ -7,9 +7,14 @@
  *
  * Per A12: localized EN/AR; technical symbols (operation_key, validator_key,
  * dataset_key) stay untranslated.
+ *
+ * Mission II: restyled with the design-system classes (.exp-card, .card,
+ * .status, .segmented, .info-line, .callout, etc.). All existing testids
+ * are preserved and two new ones added: verdict-{id} and run-result-{id}.
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Play, RotateCcw, Download, Send, ChevronDown, ChevronUp } from 'lucide-react';
 import type {
   ExperimentManifest,
   MentorResponse,
@@ -25,12 +30,15 @@ import {
   listRuns,
 } from '../api/client';
 import { ensureGuestSession } from '../hooks/useGuestSession';
+import { Status, verdictTone } from './ui';
 
 interface ExperimentCardProps {
   manifest: ExperimentManifest;
   locale: 'en' | 'ar';
   selectedForCompare: string[];
   onCompareSelect: (runId: string) => void;
+  /** Optional E0N prefix shown in the card header. */
+  displayLabel?: string;
 }
 
 export function ExperimentCard({
@@ -38,6 +46,7 @@ export function ExperimentCard({
   locale,
   selectedForCompare,
   onCompareSelect,
+  displayLabel,
 }: ExperimentCardProps) {
   const { t } = useTranslation();
   const [mode, setMode] = useState<'guided' | 'challenge'>('guided');
@@ -71,8 +80,8 @@ export function ExperimentCard({
       if (inputs === null) {
         setInputsError(
           inputsFormat === 'json'
-            ? 'Invalid JSON — check syntax'
-            : 'Invalid inputs — use key:value pairs',
+            ? t('experiments.invalidJson')
+            : t('experiments.invalidText'),
         );
         setRunning(false);
         return;
@@ -155,168 +164,171 @@ export function ExperimentCard({
 
   return (
     <article
-      className="rounded border border-ink-100 bg-white p-5 shadow-sm"
+      className="exp-card card-hover"
       aria-labelledby={`exp-${manifest.id}-title`}
+      data-testid={`exp-card-${manifest.id}`}
     >
-      <header className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3
-            id={`exp-${manifest.id}-title`}
-            className="text-lg font-semibold text-ink-900"
-          >
-            {pick(manifest.title)}
-          </h3>
-          <p className="mt-1 text-xs text-ink-900/70">{manifest.id}</p>
-        </div>
-        <div className="flex flex-wrap gap-1.5 text-xs">
-          <span
-            className="rounded bg-ink-50 px-2 py-0.5 text-ink-900/80"
-            data-testid="level-badge"
-          >
-            {t(`experiments.level.${manifest.level}`)}
-          </span>
-          <span className="rounded bg-ink-50 px-2 py-0.5 text-ink-900/60">
-            {manifest.estimated_minutes} {t('experiments.minutes')}
-          </span>
+      <div className="exp-thumb">
+        <span className="text-[10px] font-extrabold uppercase tracking-widest text-white/80">
+          {displayLabel ?? manifest.module_id}
+        </span>
+      </div>
+
+      <div className="exp-body">
+        <header className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <h3
+              id={`exp-${manifest.id}-title`}
+              className="text-[14px] font-extrabold text-ink-900"
+            >
+              {pick(manifest.title)}
+            </h3>
+            <small className="muted mt-0.5 block">{manifest.id}</small>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="status status-blue" data-testid="level-badge">
+              {t(`experiments.level.${manifest.level}`)}
+            </span>
+            <span className="status status-gray">
+              {manifest.estimated_minutes} {t('common.minutes')}
+            </span>
+          </div>
+        </header>
+
+        <p className="m-0 min-h-[30px] text-[11px] text-ink-500">
+          {pick(manifest.description)}
+        </p>
+
+        <div className="flex flex-wrap gap-1.5">
           {manifest.technology.map((tech) => (
             <span
               key={tech}
-              className="rounded bg-ink-50 px-2 py-0.5 text-ink-900/60"
+              className="status status-purple"
             >
               {tech}
             </span>
           ))}
         </div>
-      </header>
 
-      <p className="mt-3 text-sm text-ink-900/80">{pick(manifest.description)}</p>
+        <dl className="grid grid-cols-1 gap-1.5 text-[11px] text-ink-600 sm:grid-cols-2">
+          {manifest.prerequisites.length > 0 && (
+            <div>
+              <dt className="font-bold text-ink-900">
+                {t('experiments.prerequisites')}
+              </dt>
+              <dd className="mt-0.5">{manifest.prerequisites.join(', ')}</dd>
+            </div>
+          )}
+          {manifest.required_services.length > 0 && (
+            <div>
+              <dt className="font-bold text-ink-900">
+                {t('experiments.requiredServices')}
+              </dt>
+              <dd className="mt-0.5">{manifest.required_services.join(', ')}</dd>
+            </div>
+          )}
+          <div>
+            <dt className="font-bold text-ink-900">
+              {t('experiments.capabilities')}
+            </dt>
+            <dd className="mt-0.5">{manifest.capabilities.join(', ') || '—'}</dd>
+          </div>
+        </dl>
 
-      <dl className="mt-3 grid grid-cols-1 gap-2 text-xs text-ink-900/70 sm:grid-cols-2">
-        {manifest.prerequisites.length > 0 && (
-          <div>
-            <dt className="font-medium text-ink-900">
-              {t('experiments.prerequisites')}
-            </dt>
-            <dd className="mt-0.5">{manifest.prerequisites.join(', ')}</dd>
-          </div>
-        )}
-        {manifest.required_services.length > 0 && (
-          <div>
-            <dt className="font-medium text-ink-900">
-              {t('experiments.requiredServices')}
-            </dt>
-            <dd className="mt-0.5">{manifest.required_services.join(', ')}</dd>
-          </div>
-        )}
+        {/* Steps accordion */}
         <div>
-          <dt className="font-medium text-ink-900">
-            {t('experiments.capabilities')}
-          </dt>
-          <dd className="mt-0.5">{manifest.capabilities.join(', ') || '—'}</dd>
-        </div>
-      </dl>
-
-      {/* Steps accordion */}
-      <div className="mt-4">
-        <button
-          type="button"
-          className="text-xs font-medium text-ink-900 underline-offset-2 hover:underline"
-          onClick={() => setExpandedSteps((v) => !v)}
-          aria-expanded={expandedSteps}
-          aria-controls={`steps-${manifest.id}`}
-        >
-          {expandedSteps
-            ? t('experiments.hideSteps')
-            : `${t('experiments.showAllSteps')} (${manifest.steps.length})`}
-        </button>
-        {expandedSteps && (
-          <ol
-            id={`steps-${manifest.id}`}
-            className="mt-2 space-y-2 text-xs text-ink-900/80"
+          <button
+            type="button"
+            className="text-link inline-flex items-center gap-1"
+            onClick={() => setExpandedSteps((v) => !v)}
+            aria-expanded={expandedSteps}
+            aria-controls={`steps-${manifest.id}`}
           >
-            {manifest.steps.map((step, idx) => (
-              <li key={step.id} className="border-l-2 border-ink-100 pl-2">
-                <div className="font-medium">
-                  {idx + 1}. {pick(step.title)}
-                </div>
-                <div className="mt-0.5 text-ink-900/70">{pick(step.instruction)}</div>
-                <div className="mt-0.5 text-[10px] text-ink-900/50">
-                  operation: <code>{step.operation_key}</code> · validator:{' '}
-                  <code>{step.validator_key}</code>
-                </div>
-              </li>
-            ))}
-          </ol>
-        )}
+            {expandedSteps ? (
+              <ChevronUp size={12} />
+            ) : (
+              <ChevronDown size={12} />
+            )}
+            {expandedSteps
+              ? t('experiments.hideSteps')
+              : `${t('experiments.showAllSteps')} (${manifest.steps.length})`}
+          </button>
+          {expandedSteps && (
+            <ol
+              id={`steps-${manifest.id}`}
+              className="m-0 mt-2 list-none space-y-1.5 p-0 text-[11px] text-ink-600"
+            >
+              {manifest.steps.map((step, idx) => (
+                <li
+                  key={step.id}
+                  className="border-s-2 border-ink-200 ps-2"
+                >
+                  <div className="font-bold text-ink-900">
+                    {idx + 1}. {pick(step.title)}
+                  </div>
+                  <div className="mt-0.5 text-ink-500">{pick(step.instruction)}</div>
+                  <div className="mt-0.5 text-[10px] text-ink-400">
+                    operation: <code>{step.operation_key}</code> · validator:{' '}
+                    <code>{step.validator_key}</code>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
       </div>
 
       {/* Run controls */}
-      <div className="mt-4 rounded bg-ink-50 p-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <fieldset className="flex items-center gap-2 text-xs">
-            <legend className="sr-only">{t('experiments.mode.guided')}</legend>
+      <div className="border-t border-ink-100 bg-surface-subtle p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="segmented" role="group" aria-label="Mode">
             {(['guided', 'challenge'] as const).map((m) => (
-              <label
+              <button
                 key={m}
-                className="flex cursor-pointer items-center gap-1"
+                type="button"
+                className={mode === m ? 'selected' : ''}
+                aria-pressed={mode === m}
+                onClick={() => setMode(m)}
+                data-testid={`mode-${m}-${manifest.id}`}
               >
-                <input
-                  type="radio"
-                  name={`mode-${manifest.id}`}
-                  value={m}
-                  checked={mode === m}
-                  onChange={() => setMode(m)}
-                  className="h-3 w-3"
-                />
-                <span>{t(`experiments.mode.${m}`)}</span>
-              </label>
+                {t(`experiments.mode.${m}`)}
+              </button>
             ))}
-          </fieldset>
+          </div>
+          <div className="segmented" role="group" aria-label="Inputs format">
+            {(['text', 'json'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                className={inputsFormat === f ? 'selected' : ''}
+                aria-pressed={inputsFormat === f}
+                onClick={() => setInputsFormat(f)}
+                data-testid={`inputs-format-${f}-${manifest.id}`}
+              >
+                {f === 'text' ? t('experiments.textMode') : t('experiments.jsonMode')}
+              </button>
+            ))}
+          </div>
+          {inputsError && (
+            <span
+              role="alert"
+              className="text-[10px] text-danger-600"
+              data-testid={`inputs-error-${manifest.id}`}
+            >
+              {inputsError}
+            </span>
+          )}
         </div>
 
-        <label className="mt-3 block text-xs text-ink-900/70">
-          <span className="font-medium">{t('experiments.inputsLabel')}</span>
-          <span className="ml-1 text-ink-900/50">({t('experiments.inputsHint')})</span>
-          <div className="mt-1 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setInputsFormat('text')}
-              className={`rounded px-2 py-0.5 text-[10px] ${
-                inputsFormat === 'text'
-                  ? 'bg-ink-900 text-white'
-                  : 'bg-ink-50 text-ink-900/70'
-              }`}
-              aria-pressed={inputsFormat === 'text'}
-            >
-              Text
-            </button>
-            <button
-              type="button"
-              onClick={() => setInputsFormat('json')}
-              className={`rounded px-2 py-0.5 text-[10px] ${
-                inputsFormat === 'json'
-                  ? 'bg-ink-900 text-white'
-                  : 'bg-ink-50 text-ink-900/70'
-              }`}
-              aria-pressed={inputsFormat === 'json'}
-            >
-              JSON
-            </button>
-            {inputsError && (
-              <span
-                role="alert"
-                className="text-[10px] text-red-700"
-                data-testid={`inputs-error-${manifest.id}`}
-              >
-                {inputsError}
-              </span>
-            )}
-          </div>
+        <label className="mt-2 block">
+          <span className="muted text-[10px] font-bold uppercase tracking-wide">
+            {t('experiments.inputsLabel')}
+          </span>
           {inputsFormat === 'json' ? (
             <textarea
               value={inputsText}
               onChange={(e) => setInputsText(e.target.value)}
-              className="mt-1 w-full rounded border border-ink-100 bg-white px-2 py-1 font-mono text-xs"
+              className="mt-1 w-full rounded-btn border border-ink-200 bg-white px-2 py-1 font-mono text-[11px]"
               rows={3}
               placeholder='{"key": "value"}'
               data-testid={`inputs-${manifest.id}`}
@@ -327,7 +339,7 @@ export function ExperimentCard({
               type="text"
               value={inputsText}
               onChange={(e) => setInputsText(e.target.value)}
-              className="mt-1 w-full rounded border border-ink-100 bg-white px-2 py-1 text-xs"
+              className="mt-1 w-full rounded-btn border border-ink-200 bg-white px-2 py-1 text-[11px]"
               data-testid={`inputs-${manifest.id}`}
             />
           )}
@@ -338,9 +350,10 @@ export function ExperimentCard({
             type="button"
             onClick={handleRun}
             disabled={running}
-            className="rounded bg-ink-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+            className="btn-primary"
             data-testid={`run-${manifest.id}`}
           >
+            <Play size={12} />
             {running ? t('common.loading') : t('experiments.run')}
           </button>
           {lastRun && (
@@ -348,29 +361,37 @@ export function ExperimentCard({
               <button
                 type="button"
                 onClick={handleRun}
-                className="rounded border border-ink-100 bg-white px-3 py-1 text-xs"
+                className="btn-primary"
+                data-testid={`rerun-${manifest.id}`}
               >
+                <RotateCcw size={12} />
                 {t('experiments.rerun')}
               </button>
               <button
                 type="button"
                 onClick={handleReset}
-                className="rounded border border-ink-100 bg-white px-3 py-1 text-xs"
+                className="btn-secondary"
+                data-testid={`reset-${manifest.id}`}
               >
+                <RotateCcw size={12} />
                 {t('experiments.reset')}
               </button>
               <button
                 type="button"
                 onClick={() => handleExport('md')}
-                className="rounded border border-ink-100 bg-white px-3 py-1 text-xs"
+                className="btn-secondary"
+                data-testid={`export-md-${manifest.id}`}
               >
+                <Download size={12} />
                 {t('experiments.exportMd')}
               </button>
               <button
                 type="button"
                 onClick={() => handleExport('json')}
-                className="rounded border border-ink-100 bg-white px-3 py-1 text-xs"
+                className="btn-secondary"
+                data-testid={`export-json-${manifest.id}`}
               >
+                <Download size={12} />
                 {t('experiments.exportJson')}
               </button>
             </>
@@ -378,7 +399,8 @@ export function ExperimentCard({
           <button
             type="button"
             onClick={loadHistory}
-            className="rounded border border-ink-100 bg-white px-3 py-1 text-xs"
+            className="btn-secondary"
+            data-testid={`history-${manifest.id}`}
           >
             {t('experiments.runHistory')}
           </button>
@@ -388,24 +410,27 @@ export function ExperimentCard({
       {/* Last run result */}
       {lastRun && (
         <div
-          className="mt-3 rounded border border-ink-100 p-3 text-xs"
+          className="border-t border-ink-100 p-3"
           data-testid={`run-result-${manifest.id}`}
         >
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{t('experiments.status')}:</span>
-            <span data-testid={`verdict-${manifest.id}`}>
-              <StatusBadge status={lastRun.status} />
+            <span className="text-[11px] font-bold text-ink-700">
+              {t('experiments.status')}:
             </span>
-            <span className="text-ink-900/70">
+            <span data-testid={`verdict-${manifest.id}`}>
+              <Status tone={verdictTone(lastRun.status)}>{lastRun.status}</Status>
+            </span>
+            <span className="text-[11px] text-ink-500">
               {t('experiments.runId')}: <code>{lastRun.run_id}</code>
             </span>
             {lastRun.trace_id && (
-              <span className="text-ink-900/70">
-                {t('experiments.traceId')}: <code>{lastRun.trace_id.slice(0, 8)}…</code>
+              <span className="text-[11px] text-ink-500">
+                {t('experiments.traceId')}:{' '}
+                <code>{lastRun.trace_id.slice(0, 8)}…</code>
               </span>
             )}
             {lastRun.error_code && (
-              <span className="text-ink-900/70">
+              <span className="text-[11px] text-ink-500">
                 {t('experiments.errorCode')}: <code>{lastRun.error_code}</code>
               </span>
             )}
@@ -420,19 +445,18 @@ export function ExperimentCard({
 
       {/* Mentor (T22) — ask a grounded question about the last run */}
       {lastRun && (
-        <div className="mt-3 rounded border border-ink-100 bg-ink-50/50 p-3 text-xs">
-          <h4 className="font-medium text-ink-900">Ask Mentor</h4>
-          <p className="mt-0.5 text-ink-900/60">
-            Ask a question about the run's outcome. The mentor uses only
-            the run's evidence — no cross-session data.
-          </p>
+        <div className="border-t border-ink-100 bg-surface-subtle p-3">
+          <h4 className="text-[12px] font-bold text-ink-900">
+            {t('mentor.title')}
+          </h4>
+          <p className="muted mt-0.5 text-[11px]">{t('mentor.subtitle')}</p>
           <div className="mt-2 flex gap-2">
             <input
               type="text"
               value={mentorQuestion}
               onChange={(e) => setMentorQuestion(e.target.value)}
-              placeholder="e.g., why did the run fail?"
-              className="flex-1 rounded border border-ink-100 bg-white px-2 py-1 text-xs"
+              placeholder={t('mentor.placeholder')}
+              className="min-w-0 flex-1 rounded-btn border border-ink-200 bg-white px-2 py-1 text-[11px]"
               data-testid={`mentor-question-${manifest.id}`}
               maxLength={2000}
             />
@@ -440,40 +464,33 @@ export function ExperimentCard({
               type="button"
               onClick={handleAskMentor}
               disabled={mentorLoading || !mentorQuestion.trim()}
-              className="rounded bg-ink-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+              className="btn-primary"
               data-testid={`mentor-ask-${manifest.id}`}
             >
-              {mentorLoading ? '…' : 'Ask'}
+              <Send size={12} />
+              {mentorLoading ? '…' : t('mentor.askButton')}
             </button>
           </div>
           {mentorAnswer && (
             <div
-              className="mt-2 rounded bg-white p-2 text-xs"
+              className="mt-2 rounded-btn bg-white p-2 text-[11px]"
               data-testid={`mentor-answer-${manifest.id}`}
             >
               <div className="flex items-center gap-2">
-                <span
-                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                    mentorAnswer.diagnosis_state === 'confirmed'
-                      ? 'bg-green-50 text-green-800'
-                      : mentorAnswer.diagnosis_state === 'likely'
-                        ? 'bg-amber-50 text-amber-800'
-                        : 'bg-ink-50 text-ink-900/70'
-                  }`}
-                >
-                  {mentorAnswer.diagnosis_state}
-                </span>
-                <span className="text-[10px] text-ink-900/50">
+                <Status tone={verdictTone(mentorAnswer.diagnosis_state)}>
+                  {t(`mentor.confidence.${mentorAnswer.diagnosis_state}`)}
+                </Status>
+                <span className="text-[10px] text-ink-400">
                   provider: {mentorAnswer.provider_mode}
                 </span>
               </div>
-              <p className="mt-1 text-ink-900/80">{mentorAnswer.answer}</p>
+              <p className="mt-1 text-ink-600">{mentorAnswer.answer}</p>
               {mentorAnswer.next_checks.length > 0 && (
                 <div className="mt-2">
-                  <div className="text-[10px] font-medium text-ink-900/70">
-                    Next checks:
+                  <div className="text-[10px] font-bold text-ink-500">
+                    {t('mentor.nextChecks')}
                   </div>
-                  <ul className="mt-0.5 list-disc pl-4 text-ink-900/70">
+                  <ul className="m-0 list-disc ps-4 text-ink-500">
                     {mentorAnswer.next_checks.map((c, i) => (
                       <li key={i}>{c}</li>
                     ))}
@@ -487,15 +504,15 @@ export function ExperimentCard({
 
       {/* History */}
       {showHistory && history.length > 0 && (
-        <div className="mt-3 text-xs">
-          <h4 className="font-medium text-ink-900">
+        <div className="border-t border-ink-100 p-3 text-[11px]">
+          <h4 className="font-bold text-ink-900">
             {t('experiments.runHistory')}
           </h4>
-          <ul className="mt-1 space-y-1">
+          <ul className="m-0 mt-1 list-none space-y-1 p-0">
             {history.map((r) => (
               <li
                 key={r.run_id}
-                className="flex items-center gap-2 border-l-2 border-ink-100 pl-2"
+                className="flex items-center gap-2 border-s-2 border-ink-200 ps-2"
               >
                 <input
                   type="checkbox"
@@ -504,9 +521,9 @@ export function ExperimentCard({
                   className="h-3 w-3"
                   aria-label={`Select ${r.run_id} for compare`}
                 />
-                <StatusBadge status={r.status} />
-                <code className="text-[10px] text-ink-900/60">{r.run_id}</code>
-                <span className="text-ink-900/50">
+                <Status tone={verdictTone(r.status)}>{r.status}</Status>
+                <code className="text-[10px] text-ink-500">{r.run_id}</code>
+                <span className="muted">
                   {r.started_at ? new Date(r.started_at).toLocaleString() : ''}
                 </span>
               </li>
@@ -516,13 +533,15 @@ export function ExperimentCard({
       )}
 
       {showHistory && history.length === 0 && (
-        <p className="mt-3 text-xs text-ink-900/60">{t('experiments.noRuns')}</p>
+        <p className="muted border-t border-ink-100 p-3 text-[11px]">
+          {t('experiments.noRuns')}
+        </p>
       )}
 
       {error && (
         <p
           role="alert"
-          className="mt-2 text-xs text-red-700"
+          className="border-t border-ink-100 p-3 text-[11px] text-danger-600"
           data-testid={`error-${manifest.id}`}
         >
           {error}
@@ -532,40 +551,18 @@ export function ExperimentCard({
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    PASSED: 'bg-green-50 text-green-800',
-    FAILED: 'bg-red-50 text-red-800',
-    BLOCKED: 'bg-amber-50 text-amber-800',
-    RUNNING: 'bg-blue-50 text-blue-800',
-    CREATED: 'bg-ink-50 text-ink-900',
-  };
-  const cls = colors[status] || 'bg-ink-50 text-ink-900';
-  return (
-    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
-      {status}
-    </span>
-  );
-}
-
 function StepVerdictView({ verdict, idx }: { verdict: StepVerdict; idx: number }) {
   return (
-    <div className="border-l-2 border-ink-100 pl-2">
+    <div className="border-s-2 border-ink-200 ps-2">
       <div className="flex items-center gap-2">
-        <span
-          className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-            verdict.validator_passed
-              ? 'bg-green-50 text-green-800'
-              : 'bg-red-50 text-red-800'
-          }`}
-        >
+        <Status tone={verdict.validator_passed ? 'green' : 'red'}>
           {verdict.validator_passed ? 'PASS' : 'FAIL'}
-        </span>
-        <span className="text-ink-900/80">
+        </Status>
+        <span className="text-[11px] text-ink-600">
           {idx}. {verdict.step_id}
         </span>
       </div>
-      <div className="mt-0.5 text-ink-900/60">{verdict.validator_message}</div>
+      <div className="mt-0.5 text-[11px] text-ink-500">{verdict.validator_message}</div>
     </div>
   );
 }

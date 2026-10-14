@@ -4,9 +4,14 @@
  * jsdom doesn't run Cytoscape's canvas; we test the controls (layout,
  * kind filter, selection panel, empty state) and verify the page renders
  * without crashing when the API returns elements.
+ *
+ * Mission II: page is wrapped in AppShell which uses NavLink, so we render
+ * inside a MemoryRouter. Labels and segmented control state checks are
+ * updated for the design-system refresh.
  */
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '../src/i18n';
 
@@ -79,29 +84,34 @@ import { GraphLabPage } from '../src/pages/GraphLabPage';
 function renderPage() {
   return render(
     <I18nextProvider i18n={i18n}>
-      <GraphLabPage />
+      <MemoryRouter>
+        <GraphLabPage />
+      </MemoryRouter>
     </I18nextProvider>,
   );
 }
 
-describe('Graph Lab page', () => {
+describe('Graph Explorer page', () => {
   beforeEach(() => {
     i18n.changeLanguage('en');
+    document.documentElement.lang = 'en';
+    document.documentElement.dir = 'ltr';
+    document.documentElement.classList.remove('dark');
   });
 
   it('renders heading and dataset controls', async () => {
     renderPage();
     expect(
-      screen.getByRole('heading', { name: 'Graph Lab' }),
+      screen.getByRole('heading', { name: 'Graph Explorer' }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Dataset id')).toHaveValue('lab-default');
+    expect(screen.getByLabelText('Dataset')).toHaveValue('lab-default');
     expect(screen.getByLabelText('Fixture')).toHaveValue('starter-five-v1');
   });
 
-  it('renders layout buttons and lets the user switch', async () => {
+  it('renders layout segmented buttons and lets the user switch', async () => {
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText('Breadthfirst (DAG)')).toBeInTheDocument();
+      expect(screen.getByText('Breadthfirst')).toBeInTheDocument();
     });
     const gridBtn = screen.getByText('Grid');
     fireEvent.click(gridBtn);
@@ -115,10 +125,10 @@ describe('Graph Lab page', () => {
     });
     const appChip = screen.getByText('app');
     fireEvent.click(appChip);
-    // Active chip has accent background class
-    expect(appChip.className).toContain('bg-accent-500');
-    // Clear button appears when a filter is active
-    expect(screen.getByText('clear')).toBeInTheDocument();
+    // Active chip has brand background class.
+    expect(appChip.className).toContain('bg-brand-500');
+    // Clear-selection button appears when a filter is active.
+    expect(screen.getByText('Clear selection')).toBeInTheDocument();
   });
 
   it('shows the metrics panel after a successful load', async () => {
@@ -133,22 +143,22 @@ describe('Graph Lab page', () => {
     renderPage();
     const trigger = await screen.findByTestId('select-node-A');
     fireEvent.click(trigger);
-    expect(screen.getByText('Selected node')).toBeInTheDocument();
+    expect(screen.getByText('Node inspector')).toBeInTheDocument();
     expect(screen.getByText('App A')).toBeInTheDocument();
   });
 
   it('renders the shortest-path mini-tool', async () => {
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText('Shortest path (directed)')).toBeInTheDocument();
+      expect(screen.getByText('Shortest path')).toBeInTheDocument();
     });
-    const src = screen.getByLabelText('source node_ref');
-    const tgt = screen.getByLabelText('target node_ref');
+    const src = screen.getByLabelText('Source node');
+    const tgt = screen.getByLabelText('Target node');
     fireEvent.change(src, { target: { value: 'A' } });
     fireEvent.change(tgt, { target: { value: 'B' } });
-    fireEvent.click(screen.getByText('Find'));
+    fireEvent.click(screen.getByText('Compute path'));
     await waitFor(() => {
-      expect(screen.getByText('length: 1')).toBeInTheDocument();
+      expect(screen.getByText('Path length: 1')).toBeInTheDocument();
     });
   });
 });

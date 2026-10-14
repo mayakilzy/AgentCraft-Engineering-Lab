@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '../src/i18n';
@@ -20,54 +20,69 @@ describe('App shell', () => {
     i18n.changeLanguage('en');
     document.documentElement.lang = 'en';
     document.documentElement.dir = 'ltr';
+    document.documentElement.classList.remove('dark');
   });
 
-  it('renders the five navigation items', () => {
+  it('renders the main navigation with all 10 items', () => {
     renderApp('/');
     const nav = screen.getByRole('navigation', { name: 'Main navigation' });
+    expect(nav).toBeInTheDocument();
     const links = within(nav).getAllByRole('link');
-    // 5 nav links + skip-link (sr-only) + footer-less. Allow extras.
     const labels = links
       .map((l) => l.textContent?.trim() ?? '')
       .filter(Boolean);
+    // All 10 page nav labels are present.
     expect(labels).toEqual(
       expect.arrayContaining([
         'Home',
-        'Graph Lab',
-        'Observability Lab',
         'Experiments',
-        'History',
+        'Experiment Workbench',
+        'Graph Explorer',
+        'Observability',
+        'AI Mentor',
+        'Results & Timeline',
+        'Lab Environment',
+        'Notes',
+        'Settings',
       ]),
     );
   });
 
-  it('renders the home page hero on the default route', () => {
+  it('renders the home page hero on the default route', async () => {
     renderApp('/');
     expect(
       screen.getByText(/Learn graph intelligence and observability by doing/i),
     ).toBeInTheDocument();
   });
 
-  it('renders the Graph Lab page on /graph', () => {
+  it('renders the Graph Explorer page on /graph', async () => {
     renderApp('/graph');
-    expect(screen.getByRole('heading', { name: 'Graph Lab' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Graph Explorer' }),
+      ).toBeInTheDocument();
+    });
   });
 
-  it('renders a placeholder note on stub pages', () => {
+  it('renders the Observability page on /observability', async () => {
     renderApp('/observability');
-    expect(screen.getByRole('note')).toBeInTheDocument();
+    // Observability page renders its own heading (not a placeholder note).
+    expect(
+      screen.getByRole('heading', { name: 'Observability' }),
+    ).toBeInTheDocument();
   });
 
-  it('switches locale to Arabic and flips document dir to rtl', () => {
+  it('switches locale via the toggle-language button and flips dir to rtl', () => {
     renderApp('/');
-    const select = screen.getByTestId('locale-select') as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: 'ar' } });
+    const toggle = screen.getByRole('button', { name: 'Toggle language' });
+    fireEvent.click(toggle);
     expect(document.documentElement.lang).toBe('ar');
     expect(document.documentElement.dir).toBe('rtl');
-    expect(screen.getByText('مختبر الرسم')).toBeInTheDocument();
+    // Sidebar brand renders the Arabic app title.
+    expect(screen.getByText('مختبر AgentCraft للهندسة')).toBeInTheDocument();
   });
 
-  it('renders the skip link and focuses main on click', () => {
+  it('renders the skip link visible-only on focus', () => {
     renderApp('/');
     const skip = screen.getByText('Skip to content');
     expect(skip).toHaveClass('sr-only');

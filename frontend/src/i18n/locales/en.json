@@ -1,103 +1,105 @@
 {
-  "app": {
-    "title": "AgentCraft Engineering Lab",
-    "subtitle": "Hands-on graph intelligence and observability lab"
-  },
+  "app": { "title": "AgentCraft Engineering Lab", "subtitle": "Hands-on graph intelligence and observability lab" },
   "nav": {
-    "home": "Home",
-    "graphLab": "Graph Lab",
-    "observabilityLab": "Observability Lab",
-    "experiments": "Experiments",
-    "history": "History"
+    "home": "Home", "graphLab": "Graph Explorer", "observabilityLab": "Observability",
+    "experiments": "Experiments", "workbench": "Experiment Workbench", "mentor": "AI Mentor",
+    "history": "Results & Timeline", "environment": "Lab Environment", "notes": "Notes", "settings": "Settings"
   },
   "home": {
     "hero": "Learn graph intelligence and observability by doing",
-    "description": "Ten canonical experiments. Real runs, real traces, real diagnostics. No mock success."
+    "description": "Ten canonical experiments. Real runs, real traces, real diagnostics. No mock success.",
+    "welcomeTitle": "Welcome to Engineering Lab",
+    "welcomeBody": "Learn by doing. Real engineering concepts, verifiable experiments.",
+    "stats": { "canonicalExperiments": "Canonical experiments", "passedRuns": "Passed runs", "blockedRuns": "Blocked runs", "totalRuns": "Total runs in session" },
+    "sections": { "exploreExperiments": "Explore experiments", "viewAll": "View all", "recentActivity": "Recent activity", "readyCalloutTitle": "Ready for a hands-on challenge?", "readyCalloutBody": "Choose an experiment and inspect the guided workflow.", "browseExperiments": "Browse experiments" }
   },
   "common": {
-    "status": {
-      "notStarted": "Not started",
-      "running": "Running",
-      "passed": "Passed",
-      "failed": "Failed",
-      "blocked": "Blocked"
-    },
-    "loading": "Loading…",
-    "error": "Something went wrong",
-    "language": "Language"
+    "status": { "notStarted": "Not started", "running": "Running", "passed": "Passed", "failed": "Failed", "blocked": "Blocked", "unavailable": "Unavailable", "degraded": "Degraded" },
+    "loading": "Loading…", "error": "Something went wrong", "retry": "Retry", "language": "Language",
+    "skipToContent": "Skip to content", "toggleMenu": "Toggle menu", "guestSession": "Guest session",
+    "searchPlaceholder": "Search experiments, concepts, or questions...", "previewData": "PREVIEW DATA",
+    "notChecked": "Not checked", "openLab": "Open lab", "available": "Available", "minutes": "min", "refresh": "Refresh"
   },
-  "health": {
-    "live": "Live",
-    "ready": "Ready",
-    "degraded": "Degraded",
-    "notReady": "Not ready",
-    "services": "Services"
-  },
-  "footer": {
-    "version": "V1.0"
-  },
+  "health": { "live": "Live", "ready": "Ready", "degraded": "Degraded", "notReady": "Not ready", "services": "Services" },
+  "footer": { "version": "V1.0" },
   "experiments": {
     "title": "Experiments",
     "description": "Ten canonical experiments — guided and challenge modes. Each card lists the level, prerequisites, expected outputs, and the technologies involved.",
-    "level": {
-      "beginner": "Beginner",
-      "intermediate": "Intermediate",
-      "advanced": "Advanced"
-    },
-    "mode": {
-      "guided": "Guided",
-      "challenge": "Challenge"
-    },
-    "minutes": "minutes",
-    "prerequisites": "Prerequisites",
-    "requiredServices": "Required services",
-    "technology": "Technology",
-    "capabilities": "Capabilities",
-    "expectedOutputs": "Expected outputs",
-    "steps": "Steps",
-    "step": "Step",
-    "instruction": "Instruction",
-    "run": "Run",
-    "rerun": "Rerun",
-    "reset": "Reset",
-    "compare": "Compare",
-    "export": "Export",
-    "exportMd": "Export (Markdown)",
-    "exportJson": "Export (JSON)",
-    "traceId": "Trace ID",
-    "runId": "Run ID",
-    "startedAt": "Started",
-    "endedAt": "Ended",
-    "status": "Status",
-    "errorCode": "Error code",
-    "noRuns": "No runs yet for this experiment in your session.",
-    "runHistory": "Run history",
-    "selectToCompare": "Select two runs to compare",
-    "compareResults": "Comparison results",
-    "sameExperiment": "Same experiment",
-    "sameStatus": "Same final status",
-    "sameStepCount": "Same step count",
-    "verdict": "Verdict",
-    "expected": "Expected",
-    "actual": "Actual",
+    "level": { "beginner": "Beginner", "intermediate": "Intermediate", "advanced": "Advanced" },
+    "mode": { "guided": "Guided", "challenge": "Challenge" },
+    "minutes": "minutes", "prerequisites": "Prerequisites", "requiredServices": "Required services",
+    "technology": "Technology", "capabilities": "Capabilities", "expectedOutputs": "Expected outputs",
+    "steps": "Steps", "step": "Step", "instruction": "Instruction", "run": "Run", "rerun": "Rerun",
+    "reset": "Reset", "compare": "Compare", "export": "Export", "exportMd": "Export (Markdown)", "exportJson": "Export (JSON)",
+    "traceId": "Trace ID", "runId": "Run ID", "startedAt": "Started", "endedAt": "Ended", "status": "Status",
+    "errorCode": "Error code", "noRuns": "No runs yet for this experiment in your session.",
+    "runHistory": "Run history", "selectToCompare": "Select two runs to compare", "compareResults": "Comparison results",
+    "sameExperiment": "Same experiment", "sameStatus": "Same final status", "sameStepCount": "Same step count",
+    "verdict": "Verdict", "expected": "Expected", "actual": "Actual",
     "noExperiments": "No experiments available. Make sure the backend loaded the lab-modules manifests.",
     "failedToLoad": "Failed to load experiments. Check the backend connection.",
-    "inputsLabel": "Inputs",
-    "inputsHint": "Provide the inputs for the operation (e.g., dataset_id, fixture_key, source, target). Comma-separated key:value pairs.",
-    "runStarted": "Run started…",
-    "runCreated": "Run created",
-    "showAllSteps": "Show all steps",
-    "hideSteps": "Hide steps",
-    "textMode": "Text",
-    "jsonMode": "JSON",
-    "invalidJson": "Invalid JSON — check syntax",
-    "invalidText": "Invalid inputs — use key:value pairs",
-    "servicesNotConfigured": "Grafana/Tempo not configured in this environment. trace_id is populated; the deep-link will be available after G07 deployment."
+    "inputsLabel": "Inputs", "inputsHint": "Provide the inputs for the operation (e.g., dataset_id, fixture_key, source, target). Comma-separated key:value pairs.",
+    "runStarted": "Run started…", "runCreated": "Run created", "showAllSteps": "Show all steps", "hideSteps": "Hide steps",
+    "textMode": "Text", "jsonMode": "JSON", "invalidJson": "Invalid JSON — check syntax", "invalidText": "Invalid inputs — use key:value pairs",
+    "servicesNotConfigured": "Grafana/Tempo not configured in this environment. trace_id is populated; the deep-link will be available after G07 deployment.",
+    "searchPlaceholder": "Search experiments", "filterAll": "All", "experimentCount": "experiments"
+  },
+  "workbench": {
+    "title": "Experiment Workbench", "selectExperiment": "Select experiment", "steps": "Experiment steps",
+    "stepLabels": { "intro": "Introduction", "load": "Load fixture", "inspect": "Inspect data", "execute": "Execute operation", "validate": "Validate results", "review": "Review evidence", "export": "Export report" },
+    "previewOnly": "Preview only", "resetView": "Reset view", "nextStep": "Next step",
+    "executionDisabled": "Backend execution is intentionally disabled", "executionDisabledBody": "Connect this control to the existing run API and validators.",
+    "challengeHint": "Solve the task without step-by-step hints.", "guidedHint": "Follow the guided steps and inspect the validation feedback."
+  },
+  "graph": {
+    "title": "Graph Explorer", "topology": "Graph topology", "nodeInspector": "Node inspector", "layout": "Layout",
+    "layouts": { "cose": "Cose", "grid": "Grid", "circle": "Circle", "breadthfirst": "Breadthfirst" },
+    "dataset": "Dataset", "source": "Source", "nodeCount": "Nodes", "edgeCount": "Edges",
+    "selectNode": "Select a node to inspect", "kindFilter": "Kind filter", "allKinds": "All kinds",
+    "staticIllustrationNote": "Static illustration. Production retains Cytoscape.js with its four working layouts.",
+    "metrics": "Metrics", "density": "Density", "directed": "Directed", "isDag": "Acyclic (DAG)",
+    "weaklyConnected": "Weakly connected components", "stronglyConnected": "Strongly connected components",
+    "selfLoops": "Self loops", "seedGraph": "Seed graph", "shortestPath": "Shortest path",
+    "sourceLabel": "Source node", "targetLabel": "Target node", "computePath": "Compute path",
+    "pathResult": "Path result", "noPath": "No path between these nodes", "pathLength": "Path length"
+  },
+  "observability": {
+    "title": "Observability", "requestsPerSec": "Requests / sec", "errorRate": "Error rate",
+    "p95Latency": "P95 latency", "activeServices": "Active services", "requestRate": "Request rate",
+    "traceExplorer": "Trace explorer", "awaitingPrometheus": "Awaiting live Prometheus metrics",
+    "awaitingTempo": "Awaiting Tempo trace evidence",
+    "servicesUnavailable": "Telemetry services are unavailable in this environment.",
+    "servicesUnavailableBody": "Prometheus, Tempo, and Grafana probes must succeed before any metrics or traces are shown here. The backend exposes /api/v1/health/ready — when those services report 'ready', this page populates automatically.",
+    "deepLink": "Open in Grafana"
+  },
+  "mentor": {
+    "title": "AI Mentor", "subtitle": "Grounded in current session run evidence", "previewOnly": "Preview only",
+    "placeholder": "Ask about a run (preview input only)", "sendButton": "Add preview message",
+    "emptyState": "Select a real run to ask evidence-grounded questions. In this preview, no run evidence is available.",
+    "selectRun": "Select a run to question",
+    "confidence": { "confirmed": "Confirmed", "likely": "Likely", "insufficient_evidence": "Insufficient evidence" },
+    "evidenceRefs": "Evidence references", "nextChecks": "Next checks", "askButton": "Ask mentor"
   },
   "history": {
-    "title": "Run History",
-    "description": "All runs in your current session. Click any run to inspect, export, or compare.",
+    "title": "Results & Timeline", "subtitle": "All runs in your current session. Inspect, export, or compare any two runs.",
+    "runId": "Run ID", "experiment": "Experiment", "verdict": "Verdict", "time": "Time", "duration": "Duration",
     "noRuns": "You have no runs yet. Visit the Experiments page to start one.",
-    "filterByExperiment": "Filter by experiment"
+    "filterByExperiment": "Filter by experiment", "selectTwoToCompare": "Select two runs to compare",
+    "clearSelection": "Clear selection", "runHistory": "Run history", "sampleRecords": "Sample records"
+  },
+  "environment": {
+    "title": "Lab Environment", "services": "Lab services", "deploymentProfiles": "Deployment profiles",
+    "profilesList": "core · neo4j · observability · test", "healthNote": "Service health comes from real backend probes. No invented green badges.",
+    "probingServices": "Probing services…", "lastChecked": "Last checked", "state": "State", "detail": "Detail", "refresh": "Re-probe"
+  },
+  "notes": {
+    "title": "Lab Notes", "subtitle": "Local scratchpad — not persisted to the server. Cleared when you clear browser storage.",
+    "placeholder": "Write your observations here…", "saveButton": "Save note", "clearButton": "Clear all", "savedLocally": "Saved locally"
+  },
+  "settings": {
+    "title": "Preferences", "subtitle": "Guest-session settings only. No user accounts or authentication.",
+    "language": "Interface language", "theme": "Appearance", "themeLight": "Light", "themeDark": "Dark",
+    "note": "Guest-session settings only. Do not introduce user accounts or authentication screens.",
+    "guestInfo": "You are running as a guest. Your session is isolated via an HttpOnly cookie and will expire automatically."
   }
 }

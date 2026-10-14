@@ -1,11 +1,16 @@
 /**
- * HistoryPage — T20 (G05).
+ * HistoryPage — Results & Timeline.
  *
  * Per the contract §4: `GET /api/v1/runs?experiment_id=&limit=` paginated/
- * scope-limited history.
+ * scope-limited history. Mission II: wrapped in AppShell, restyled with
+ * the design-system classes, and bootstraps a guest session via
+ * useGuestSession before calling listRuns (the cookie is required).
  */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Filter, Download, RotateCcw, FileText } from 'lucide-react';
+import { AppShell } from '../components/AppShell';
+import { Card, Status, EmptyState, verdictTone } from '../components/ui';
 import {
   exportRun,
   getExperiment,
@@ -15,62 +20,71 @@ import {
   type ExperimentManifest,
   type RunRecord,
 } from '../api/client';
+import { useGuestSession } from '../hooks/useGuestSession';
 
 export function HistoryPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language === 'ar' ? 'ar' : 'en';
+  const { session } = useGuestSession(locale);
+
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState(false);
   const [filter, setFilter] = useState<string>('');
   const [experimentIds, setExperimentIds] = useState<string[]>([]);
-  const [, setManifestsById] = useState<Record<string, ExperimentManifest>>({});
+  const [manifestsById, setManifestsById] = useState<Record<string, ExperimentManifest>>({});
 
+  // Load experiments list + manifests (best-effort, not preview-blocking).
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      setLoading(true);
-      setError(null);
       try {
         const list = await listExperiments();
         if (cancelled) return;
         setExperimentIds(list.ids);
-        // Fetch manifests so we can show the experiment title.
         const mans = await Promise.all(list.ids.map((id) => getExperiment(id)));
         if (cancelled) return;
         const byId: Record<string, ExperimentManifest> = {};
         for (const m of mans) byId[m.id] = m;
         setManifestsById(byId);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+      } catch {
+        /* best-effort */
       }
     }
     void load();
     return () => {
       cancelled = true;
     };
-  }, [setManifestsById]);
+  }, []);
 
+  // Load runs once a guest session is available.
   useEffect(() => {
+    if (!session) return;
     let cancelled = false;
     async function loadRuns() {
+      setLoading(true);
+      setError(null);
       try {
         const h = await listRuns(filter || undefined, 100);
-        if (!cancelled) setRuns(h.runs);
+        if (!cancelled) {
+          setRuns(h.runs);
+          setPreview(false);
+        }
       } catch (err) {
         if (!cancelled) {
+          setPreview(true);
           setError(err instanceof Error ? err.message : String(err));
         }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     }
     void loadRuns();
     return () => {
       cancelled = true;
     };
-  }, [filter]);
+  }, [filter, session]);
 
   async function handleExport(runId: string, format: 'md' | 'json') {
     try {
@@ -101,134 +115,153 @@ export function HistoryPage() {
   }
 
   return (
-    <main id="main-content" className="mx-auto max-w-6xl px-4 py-8" tabIndex={-1}>
-      <h1 className="text-3xl font-semibold text-ink-900">
-        {t('history.title')}
-      </h1>
-      <p className="mt-3 max-w-2xl text-sm text-ink-900/80">
-        {t('history.description')}
-      </p>
+    <AppShell previewMode={preview}>
+      <section className="page-heading" aria-labelledby="history-title">
+        <div>
+          <div className="eyebrow">{t('nav.history')}</div>
+          <h1 id="history-title">{t('history.title')}</h1>
+          <p>{t('history.subtitle')}</p>
+        </div>
+        <Status tone={preview ? 'amber' : 'green'}>
+          {preview ? t('common.previewData') : `${runs.length} ${t('history.runHistory')}`}
+        </Status>
+      </section>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <label className="text-xs text-ink-900/70" htmlFor="filter-experiment">
-          {t('history.filterByExperiment')}:
-        </label>
-        <select
-          id="filter-experiment"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="rounded border border-ink-100 bg-white px-2 py-1 text-xs"
-          data-testid="filter-experiment"
-        >
-          <option value="">—</option>
-          {experimentIds.map((id) => (
-            <option key={id} value={id}>
-              {id}
-            </option>
-          ))}
-        </select>
+      {/* Filter toolbar */}
+      <div className="toolbar">
+        <div className="field">
+          <Filter size={14} aria-hidden />
+          <label className="muted whitespace-nowrap text-[11px] font-bold uppercase tracking-wide">
+            {t('history.filterByExperiment')}
+          </label>
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            aria-label={t('history.filterByExperiment')}
+            data-testid="filter-experiment"
+            className="flex-1"
+          >
+            <option value="">{t('experiments.filterAll')}</option>
+            {experimentIds.map((id) => {
+              const m = manifestsById[id];
+              const label = m
+                ? (locale === 'ar' ? m.title.ar : m.title.en)
+                : id;
+              return (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              );
+            })}
+          </select>
+        </div>
       </div>
 
-      {loading && <p className="mt-6 text-sm text-ink-900/70">{t('common.loading')}</p>}
-      {error && (
-        <p role="alert" className="mt-6 text-sm text-red-700">
+      {loading && (
+        <p className="text-[13px] text-ink-500">{t('common.loading')}</p>
+      )}
+      {error && !preview && (
+        <p role="alert" className="text-[13px] text-danger-600">
           {error}
         </p>
       )}
-      {!loading && runs.length === 0 && (
-        <p className="mt-6 text-sm text-ink-900/70">{t('history.noRuns')}</p>
-      )}
 
-      {runs.length > 0 && (
-        <div className="mt-6 overflow-x-auto">
-          <table className="w-full text-xs" data-testid="history-table">
-            <thead>
-              <tr className="border-b border-ink-100 text-left text-ink-900/70">
-                <th className="py-2 pr-2">{t('experiments.runId')}</th>
-                <th className="py-2 pr-2">{t('experiments.status')}</th>
-                <th className="py-2 pr-2">{t('experiments.traceId')}</th>
-                <th className="py-2 pr-2">{t('experiments.startedAt')}</th>
-                <th className="py-2 pr-2">{t('experiments.endedAt')}</th>
-                <th className="py-2 pr-2">{t('experiments.errorCode')}</th>
-                <th className="py-2 pr-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((r) => (
-                <tr key={r.run_id} className="border-b border-ink-50">
-                  <td className="py-2 pr-2">
-                    <code className="text-[10px]">{r.run_id}</code>
-                  </td>
-                  <td className="py-2 pr-2">
-                    <StatusBadge status={r.status} />
-                  </td>
-                  <td className="py-2 pr-2">
-                    {r.trace_id ? (
-                      <code className="text-[10px]">{r.trace_id.slice(0, 8)}…</code>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="py-2 pr-2 text-ink-900/70">
-                    {r.started_at ? new Date(r.started_at).toLocaleString() : '—'}
-                  </td>
-                  <td className="py-2 pr-2 text-ink-900/70">
-                    {r.ended_at ? new Date(r.ended_at).toLocaleString() : '—'}
-                  </td>
-                  <td className="py-2 pr-2 text-ink-900/70">
-                    {r.error_code ? (
-                      <code className="text-[10px]">{r.error_code}</code>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="py-2 pr-2">
-                    <div className="flex flex-wrap gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleExport(r.run_id, 'md')}
-                        className="rounded border border-ink-100 bg-white px-2 py-0.5 text-[10px]"
-                      >
-                        MD
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleExport(r.run_id, 'json')}
-                        className="rounded border border-ink-100 bg-white px-2 py-0.5 text-[10px]"
-                      >
-                        JSON
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleReset(r.run_id)}
-                        className="rounded border border-ink-100 bg-white px-2 py-0.5 text-[10px]"
-                      >
-                        {t('experiments.reset')}
-                      </button>
-                    </div>
-                  </td>
+      {!loading && runs.length === 0 ? (
+        <EmptyState
+          icon={<FileText size={20} />}
+          title={t('history.noRuns')}
+        />
+      ) : (
+        <Card>
+          <div className="table-wrap">
+            <table data-testid="history-table">
+              <thead>
+                <tr>
+                  <th>{t('history.runId')}</th>
+                  <th>{t('history.experiment')}</th>
+                  <th>{t('experiments.status')}</th>
+                  <th>{t('experiments.traceId')}</th>
+                  <th>{t('experiments.startedAt')}</th>
+                  <th>{t('experiments.endedAt')}</th>
+                  <th>{t('experiments.errorCode')}</th>
+                  <th>{t('common.refresh')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {runs.map((r) => (
+                  <tr key={r.run_id} data-testid={`history-row-${r.run_id}`}>
+                    <td>
+                      <code className="text-[11px]">{r.run_id.slice(0, 8)}…</code>
+                    </td>
+                    <td>
+                      {(() => {
+                        const m = manifestsById[r.experiment_id];
+                        return m ? (locale === 'ar' ? m.title.ar : m.title.en) : r.experiment_id;
+                      })()}
+                    </td>
+                    <td>
+                      <Status tone={verdictTone(r.status)}>{r.status}</Status>
+                    </td>
+                    <td>
+                      {r.trace_id ? (
+                        <code className="text-[11px]">{r.trace_id.slice(0, 8)}…</code>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="text-ink-500">
+                      {r.started_at ? new Date(r.started_at).toLocaleString() : '—'}
+                    </td>
+                    <td className="text-ink-500">
+                      {r.ended_at ? new Date(r.ended_at).toLocaleString() : '—'}
+                    </td>
+                    <td className="text-ink-500">
+                      {r.error_code ? (
+                        <code className="text-[11px]">{r.error_code}</code>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td>
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          aria-label="Export Markdown"
+                          className="icon-btn"
+                          onClick={() => handleExport(r.run_id, 'md')}
+                          data-testid={`export-md-${r.run_id}`}
+                        >
+                          <Download size={12} />
+                          MD
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Export JSON"
+                          className="icon-btn"
+                          onClick={() => handleExport(r.run_id, 'json')}
+                          data-testid={`export-json-${r.run_id}`}
+                        >
+                          <Download size={12} />
+                          JSON
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={t('experiments.reset')}
+                          className="icon-btn"
+                          onClick={() => handleReset(r.run_id)}
+                          data-testid={`reset-${r.run_id}`}
+                        >
+                          <RotateCcw size={12} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
-    </main>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    PASSED: 'bg-green-50 text-green-800',
-    FAILED: 'bg-red-50 text-red-800',
-    BLOCKED: 'bg-amber-50 text-amber-800',
-    RUNNING: 'bg-blue-50 text-blue-800',
-    CREATED: 'bg-ink-50 text-ink-900',
-  };
-  const cls = colors[status] || 'bg-ink-50 text-ink-900';
-  return (
-    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
-      {status}
-    </span>
+    </AppShell>
   );
 }

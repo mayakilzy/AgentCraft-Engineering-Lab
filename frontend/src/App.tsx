@@ -1,41 +1,39 @@
 import { Route, Routes } from 'react-router-dom';
-import { NavBar } from './components/NavBar';
-import { Footer } from './components/Footer';
 import {
+  EnvironmentPage,
   ExperimentsPage,
   GraphLabPage,
   HistoryPage,
   HomePage,
-  ObservabilityLabPage,
+  MentorPage,
+  NotesPage,
+  ObservabilityPage,
+  SettingsPage,
+  WorkbenchPage,
 } from './pages';
 import './i18n';
 import './styles/index.css';
 
 /**
- * AppShell: the route table + chrome (nav, footer, skip link). The Router
- * itself is provided by main.tsx (BrowserRouter) or tests (MemoryRouter)
- * so we never nest routers.
+ * App — 10-route table. Each page wraps itself in <AppShell>, so the App
+ * component is just the route table (no NavBar/Footer at this level).
+ * The Router itself is provided by main.tsx (BrowserRouter) or tests
+ * (MemoryRouter) so we never nest routers.
  */
 export function App() {
   return (
-    <div className="flex min-h-full flex-col">
-      {/* Skip link for keyboard users (spec §5: keyboard accessible). */}
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-10 focus:rounded focus:bg-white focus:px-3 focus:py-2 focus:text-sm"
-      >
-        Skip to content
-      </a>
-      <NavBar />
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/graph" element={<GraphLabPage />} />
-        <Route path="/observability" element={<ObservabilityLabPage />} />
-        <Route path="/experiments" element={<ExperimentsPage />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="*" element={<HomePage />} />
-      </Routes>
-      <Footer />
-    </div>
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/experiments" element={<ExperimentsPage />} />
+      <Route path="/workbench" element={<WorkbenchPage />} />
+      <Route path="/graph" element={<GraphLabPage />} />
+      <Route path="/observability" element={<ObservabilityPage />} />
+      <Route path="/mentor" element={<MentorPage />} />
+      <Route path="/history" element={<HistoryPage />} />
+      <Route path="/environment" element={<EnvironmentPage />} />
+      <Route path="/notes" element={<NotesPage />} />
+      <Route path="/settings" element={<SettingsPage />} />
+      <Route path="*" element={<HomePage />} />
+    </Routes>
   );
 }
